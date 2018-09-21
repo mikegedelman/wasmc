@@ -1,0 +1,4 @@
+dist/
+node_modules/
+a.out.wasm
+a.out.wast

@@ -1,0 +1,19 @@
+{
+  "name": "scheme-wasm",
+  "version": "0.0.1",
+  "description": "Toy compiler for scheme to WASM",
+  "main": "main.js",
+  "scripts": {
+    "test": "mocha"
+  },
+  "author": "Mike Gedelman",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^10.10.1",
+    "chai": "^4.1.2",
+    "mocha": "^5.2.0"
+  },
+  "dependencies": {
+    "libclang": "0.0.11"
+  }
+}
