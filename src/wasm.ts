@@ -1,15 +1,10 @@
 import { FunctionDefinition, FunctionCall, Type, ASTNode, Variable, ConstExpr,
-         ReturnStatement, SetLocalVar, DeclareLocalVar } from './ast';
+         ReturnStatement, SetLocalVar, DeclareLocalVar, Types, StringConstant } from './ast';
 
 enum WasmType {
     i32 = 'i32',
     f32 = 'f32'
 }
-
-const typeToWasmType = {
-    'float': 'f32',
-    'int': 'i32'
-};
 
 class Instr {
     name: string
@@ -29,8 +24,16 @@ class Instr {
     }
 }
 
-class WasmText {
-    functions: []
+class WasmGlobal {
+    constructor (public val: any, public idx: number) {}
+
+    serialize() {
+        let serialized = Buffer.from(this.val).toString('utf-8');
+        if (typeof this.val === 'string') {
+            serialized = '"' + serialized + '"';
+        }
+        return `(data (i32.const ${this.idx})` + serialized + ')';
+    }
 }
 
 class WasmFunction {
@@ -39,16 +42,18 @@ class WasmFunction {
     params: WasmType[]
     locals: WasmType[] = []
     body: Instr[] = []
+    compiler: WasmCompiler
 
     private identMap: any = {}
     private localCounter: number = 0
-    private stack: any[] = []  // Represent values currently on the stack
+    private stack: any[] = []  // Represent values currently on the local stack
     private returnType: any = false  // Later this will be an actual type for type checking
 
-    constructor(fn: FunctionDefinition) {
+    constructor(compiler: WasmCompiler, fn: FunctionDefinition) {
+        this.compiler = compiler;
         this.name = fn.ident;
-        this.type = <WasmType>typeToWasmType[fn.type];
-        this.params = fn.params.map(p => p.type === Type.Float ? WasmType.f32 : WasmType.i32);
+        this.type = <WasmType>typeToWasmType(fn.type);
+        this.params = fn.params.map(p => p.type === Types.Float ? WasmType.f32 : WasmType.i32);
 
         fn.params.forEach((param, idx) => {
             this.identMap[param.ident] = idx;
@@ -82,7 +87,7 @@ class WasmFunction {
             this.instr('set_local', this.getVar(stmt.ident));
         // Define variable
         } else if (stmt instanceof DeclareLocalVar) {
-            this.addLocal(stmt.ident, <WasmType> typeToWasmType[stmt.type]);
+            this.addLocal(stmt.ident, <WasmType> typeToWasmType(stmt.type));
 
             if (stmt.expr) {
                 // TODO this is copypasted from directly above
@@ -102,7 +107,16 @@ class WasmFunction {
             }
        } else if (expr instanceof ConstExpr) {
             this.pushConst(expr);
+       } else if (expr instanceof StringConstant) {
+           this.stringConstant(expr);
        }
+    }
+
+    stringConstant(expr: StringConstant) {
+        const str = expr.val;
+        const idx = this.compiler.addGlobal(str, 'StringConstant'); // todo hack alert
+        this.instr('i32.const', idx);
+        // this.instr('i32.load');
     }
 
     /// Create a new local var
@@ -121,7 +135,7 @@ class WasmFunction {
             '*': 'mul',
             '/': 'div'
         };
-        const instr = `${typeToWasmType[type]}.${instrMap[ident]}`;
+        const instr = `${typeToWasmType(type)}.${instrMap[ident]}`;
         this.instr(instr);
     }
 
@@ -129,17 +143,6 @@ class WasmFunction {
         const args = fnCall.args;
         const types: Type[] = [];
         args.forEach(arg => {
-            // if (arg instanceof Variable) {
-            //     this.pushVar(arg.ident);
-            //     types.push(Type.Int); // TODO
-            // } else if (arg instanceof ConstExpr) {
-            //     this.pushConst(arg);
-            //     types.push((<ConstExpr>arg).type)
-            // } else if (arg instanceof FunctionCall) {
-            //     // TODO check return type matches
-            //     this.fnCall(arg);
-            //     types.push(Type.Int); // TODO
-            // }
             this.expr(arg);
         });
 
@@ -148,7 +151,7 @@ class WasmFunction {
                 throw new Error(`${fnCall.ident} operation accepts exactly two args`);
             }
             // TODO type check args
-            this.arithmetic(fnCall.ident, Type.Int);
+            this.arithmetic(fnCall.ident, Types.Int);
         } else {
             this.instr('call', `$${fnCall.ident}`);
         }
@@ -168,11 +171,7 @@ class WasmFunction {
     }
 
     pushConst(e: ConstExpr) {
-        const instrMap = {
-            'float': 'f32.const',
-            'int': 'i32.const'
-        };
-        const instr = instrMap[e.type];
+        const instr = `${typeToWasmType(e.type)}.const`;
         if (!instr) { throw new Error(`Unexpected internal type ${e.type}`)};
 
         this.instr(instr, e.val);
@@ -198,18 +197,44 @@ class WasmFunction {
 }
 
 class WasmCompiler {
-    globals: any[]
+    globals: WasmGlobal[]
     functions: WasmFunction[]
+
+    private globalIdx: number = 1
 
     constructor(private astList: ASTNode[]) {
         this.globals = [];
         this.functions = [];
     }
 
+    /// TODO passing nodeType in here is kind of a shortcut
+    addGlobal(val: any, nodeType: string): number {
+        const ret = this.globalIdx;
+        if (nodeType === 'StringConstant') {
+            const str = <string> val;
+            const sz = str.length;
+
+            this.globals.push(new WasmGlobal(str, this.globalIdx));
+            this.globalIdx += val.length;
+
+            // TODO this is a hack but I can't get wast to serialize the null in null terminated strings
+            // this.globals.push(new WasmGlobal(0, this.globalIdx));
+            // this.globalIdx++;
+        } else {
+            this.globals.push(new WasmGlobal(val, this.globalIdx));
+            this.globalIdx++;
+        }
+
+
+
+        return ret;
+    }
+
     compile() {
         this.astList.forEach(ast => {
             if (ast instanceof FunctionDefinition) {
-                this.functions.push(new WasmFunction(<FunctionDefinition>ast));
+                const fn = new WasmFunction(this, <FunctionDefinition>ast);
+                this.functions.push(fn);
             } else {
                 throw new Error('Not yet supported');
             }
@@ -219,6 +244,16 @@ class WasmCompiler {
     serialize(): string {
         return this.globals.map(g => g.serialize()).join('\n\n')
             + this.functions.map(f => f.serialize()).join('\n\n');
+    }
+}
+
+function typeToWasmType(t: Type): WasmType {
+    if (t === Types.Float) {
+        return WasmType.f32;
+    } else if (t === Types.Int) {
+        return WasmType.i32;
+    } else {
+        throw new Error(`Can't convert ${t.name} to WasmType`);
     }
 }
 

@@ -1,3 +1,5 @@
+import { takeWhile } from './utility';
+
 const RESERVED_WORDS = ['define', 'function', 'var', 'set', 'if', 'int', 'float',
                         'string', 'void', 'return', '=', '>=', '<=', '<', '>'];
 const IDENT = '__IDENT__';
@@ -31,14 +33,6 @@ function isWord(ch: string): boolean {
         /[~!@#$%^&*-_+=?\"']/.test(ch);
 }
 
-function takeWhile(arr: any[], pred: Function): any[] {
-    let idx = 0;
-    while (pred(arr[idx])) {
-        idx++;
-    }
-    return arr.slice(0, idx);
-}
-
 function charsToString(arr: string[]): string {
     return arr.reduce((a, b) => a + b);
 }
@@ -58,6 +52,15 @@ function lex(raw: string): Token[] {
         } else if (ch === '(' || ch === ')') {
             ret.push(new Token(ch, line));
             idx++;
+        } else if (ch == '"') {
+            ret.push(new Token('"', line));
+            const cs = takeWhile(chars.slice(idx + 1), c => c !== '"');
+            const matching = charsToString(cs);
+            if (matching.indexOf('\n') > -1) { throw new Error("Unexpected line break in string constant"); }
+
+            ret.push(new Token(matching, line, '__string_constant__'));
+            ret.push(new Token('"', line));
+            idx += matching.length + 2;
         } else if (isWord(ch)) {
             const matching = charsToString(takeWhile(chars.slice(idx), isWord));
 
@@ -68,7 +71,7 @@ function lex(raw: string): Token[] {
             }
             idx += matching.length;
 
-        } else if (ch === '\0') {
+        } else if (ch === '\0') { // TODO I don't think null char is EOF
             return ret;
         } else if (ch === '\n' || ch === '\r') {
             line++;

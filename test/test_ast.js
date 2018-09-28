@@ -1,7 +1,7 @@
 const expect = require('chai').expect;
 
-const { AST, Variable, FunctionCall, ConstExpr, GlobalDefinition,
-        FunctionDefinition, Type } = require('../ast.js');
+const { buildAST, Variable, FunctionCall, ConstExpr, GlobalDefinition,
+        FunctionDefinition, Type, Types, makeType } = require('../dist/ast.js');
 
 describe('AST', () => {
     const testParse = input => {
@@ -19,7 +19,6 @@ describe('AST', () => {
                 args: ['5', '3'],
             }
         }];
-        const ast = new AST(prog);
 
         const fnCall = new FunctionCall({ name: 0, args: [] });
         fnCall.ident = '+';
@@ -27,10 +26,10 @@ describe('AST', () => {
 
         const globalDef = new GlobalDefinition({});
         globalDef.ident = 'x';
-        globalDef.type = Type.Float;
+        globalDef.type = Types.Float;
         globalDef.expr = fnCall;
 
-        expect(ast.values()[0]).to.eql(globalDef)
+        expect(buildAST()[0]).to.eql(globalDef)
     });
 
     it('loads function definitions to AST', () => {
@@ -48,7 +47,6 @@ describe('AST', () => {
                 args: ['argc'],
             }]
         }];
-        const ast = new AST(prog);
 
         const printfCall = new FunctionCall({ name: 0, args: [] });
         printfCall.ident = 'printf';
@@ -56,12 +54,30 @@ describe('AST', () => {
 
         const fnDef = new FunctionDefinition({ body: [] });
         fnDef.ident = 'main';
-        fnDef.type = Type.Int;
+        fnDef.type = Types.Int;
         fnDef.params = [{ ident: 'argc', type: Type.Int}];
         fnDef.body = [printfCall];
 
-        expect(ast.values()[0]).to.eql(fnDef)
+        expect(buildAST()[0]).to.eql(fnDef)
     });
 
-    
+    it('parses types', () => {
+        const cases = [
+            ['char', Types.Char],
+            ['int', Types.Int],
+            ['float', Types.Float],
+            ['void', Types.Void],
+            ['char*', new Types.Pointer(Types.Char)],
+            ['char**', new Types.Pointer(new Types.Pointer(Types.Char))],
+            ['int[25]', new Types.Array(Types.Int, 25)],
+            ['int[25][25]', new Types.Array(new Types.Array(Types.Int, 25), 25)],
+            ['char**[25]', new Types.Array(new Types.Pointer(new Types.Pointer(Types.Char)), 25)],
+        ];
+
+        // cases.forEach(case => {
+        //     const expected = case[1];
+        //     const actual = makeType(case[0]);
+        //     expect(actual.equals(expected)).to.be(true);
+        // });
+    });
 });

@@ -1,11 +1,15 @@
 declare const WebAssembly: any;
 
-import { lex } from './lex';
-import { parse } from './parse';
-import { AST } from './ast';
-import { WasmCompiler } from './wasm';
 import { readFileSync, writeFileSync } from 'fs';
 import { exec } from 'child_process';
+import { TextDecoder } from 'util';
+
+import { lex } from './lex';
+import { parse } from './parse';
+import { buildAST } from './ast';
+import { WasmCompiler } from './wasm';
+import { takeWhile } from './utility';
+
 
 const WAST_FILENAME = 'a.out.wast';
 const WASM_FILENAME = 'a.out.wasm';
@@ -23,11 +27,13 @@ function wast2wasm() {
     });
 }
 
-const memory = new WebAssembly.Memory({ initial: 256 })
-function consoleLogString(offset: number, length: number) {
-  var bytes = new Uint8Array(memory.buffer, offset, length);
-  var string = new TextDecoder('utf8').decode(bytes);
-  console.log(string);
+const memory = new WebAssembly.Memory({ initial: 256 });
+
+function consoleLogString(offset: number) {
+    const bytes = new Uint8Array(memory.buffer, offset);
+    const strBytes = new Uint8Array(<any>takeWhile(bytes, b => b !== 0));
+    var string = new TextDecoder('utf8').decode(strBytes);
+    console.log(string);
 }
 
 
@@ -47,7 +53,7 @@ function runWasm(buf: any) {
     .then(instance => {
         return instance.exports.main();
     })
-    .then(console.log, console.error);
+    // .then(console.log, console.error);
 }
 
 function main() {
@@ -65,19 +71,21 @@ function main() {
         )
 
         (function int main ()
-            (return (addTwo (addOne 77)))
+            (log "Hello world")
+            (return 0)
         )
     `;
 
     const wastHeader = '(module\n'
-        + '  (import "env" "log" (func $log (param i32 i32)))\n'
-          '  (import "env" "memory" (memory 1))\n\n';
+        + '  (import "env" "log" (func $log (param i32)))\n'
+        + '  (import "env" "memory" (memory 1))\n\n';
 
     const toks = lex(prog);
+    // console.log(toks);
     const parseIr = parse(toks);
     // console.log(JSON.stringify(parseIr, null, 2));
-    const ast = new AST(parseIr).values();
-    console.log(JSON.stringify(ast, null, 2));
+    const ast = buildAST(parseIr);
+    // console.log(JSON.stringify(ast, null, 2));
     const compiler = new WasmCompiler(ast);
     compiler.compile();
     const wast = compiler.serialize();

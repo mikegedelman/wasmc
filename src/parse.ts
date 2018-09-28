@@ -20,7 +20,7 @@ set-local-var := <ident> <expr>
 
 function-call := <ident> <expr>*
 
-expr := <ident> | <function-call>
+expr := <ident> | <function-call> | <string-const>
 
 cond-expr :=  = <expr> <expr>
            |  > <expr> <expr>
@@ -106,6 +106,11 @@ class Parser {
     expr() {
         if (this.accept('(')) {
             return this.functionCall();
+        } else if (this.accept('"')) {
+            const str = this.expect('__string_constant__');
+            const ret = { name: 'StringConstant', val: str };
+            this.expect('"');
+            return ret;
         }
 
         return this.expect(IDENT);
