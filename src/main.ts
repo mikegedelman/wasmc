@@ -3,6 +3,7 @@ declare const WebAssembly: any;
 import { readFileSync, writeFileSync } from 'fs';
 import { exec } from 'child_process';
 import { TextDecoder } from 'util';
+import { argv } from 'process';
 
 import { lex } from './lex';
 import { parse } from './parse';
@@ -57,25 +58,15 @@ function runWasm(buf: any) {
 }
 
 function main() {
-    const prog = `
-        (function int addOne (int x)
-           (set x (+ x 1))
-           (return x)
-        )
+    if (!argv || argv.length !== 3) {
+        console.log(argv)
+        console.log('wasmc accepts exactly one argument');
+        return;
+    }
 
-         (function int addTwo (int x)
-           (var int y)
-           (set y (+ x 1))
-           (set y (+ y 1))
-           (return y)
-        )
+    const prog = readFileSync(argv[2]).toString();
 
-        (function int main ()
-            (log "Hello world")
-            (return 0)
-        )
-    `;
-
+    // TODO: don't hardcode this header
     const wastHeader = '(module\n'
         + '  (import "env" "log" (func $log (param i32)))\n'
         + '  (import "env" "memory" (memory 1))\n\n';
