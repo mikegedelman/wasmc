@@ -1,5 +1,6 @@
 import * as AST from './ast';
-import { BASE_TYPES, BINARY_OPS, PREFIX_UNARY_OPS, POSTFIX_UNARY_OPS, Type, Types } from './types';
+import { BASE_TYPES, BINARY_OPS, PREFIX_UNARY_OPS, POSTFIX_UNARY_OPS, ASSIGNMENT_OPS,
+         Type, Types } from './types';
 
 const VALID_IDENT_REGEX = /^([a-zA-Z_]+[a-zA-Z0-9_]*|[0-9]*)$/;
 const FLOAT_REGEX = /^[0-9]+\.[0-9]+$/;
@@ -10,7 +11,6 @@ let toks, cur, lastAccept;
 
 function next() {
     cur = (toks.shift() || {}).val;
-    // console.log(cur);
 }
 
 function peek(idx: number) {
@@ -125,14 +125,11 @@ function expr(): AST.Expr {
         return new AST.StringConstant(val);
     }
 
+    let ret;
+
     if (accept('(')) {
-        const ret = expr();
+        ret = expr();
         expect(')');
-        if (BINARY_OPS.includes(cur)) {
-            return binaryOp(ret);
-        } else {
-            return ret;
-        }
     } else if (accept(PREFIX_UNARY_OPS)) {
         const op = lastAccept;
         return new AST.UnaryOp(expr(), op);
@@ -140,20 +137,31 @@ function expr(): AST.Expr {
         const ident = expectIdent();
 
         if (accept('(')) {    
-            return functionCall(ident);
+            ret = functionCall(ident);
         } else if (accept('[')) {
             const offset = expr();
             expect(']');
-            return new AST.ArrayOffset(getIdent(ident), offset);
+            ret = new AST.ArrayOffset(getIdent(ident), offset);
         } else if (accept(POSTFIX_UNARY_OPS)) {
             const op = lastAccept;
-            return new AST.UnaryOp(new AST.Variable(ident), op, true);
+            ret = new AST.UnaryOp(new AST.Variable(ident), op, true);
         } else if (BINARY_OPS.includes(cur)) {
-            return binaryOp(getIdent(ident));
+            ret = binaryOp(getIdent(ident));
         } else {
-            return getIdent(ident);
+            ret = getIdent(ident);
         }
     }
+
+    // Look for a binary op to see if we need to continue this expression
+    if (accept(BINARY_OPS)) {
+        const lval = ret;
+        const op = lastAccept;
+        const rval = expr();
+
+        ret = new AST.BinaryOp(lval, rval, op);
+    }
+
+    return ret;
 }
 
 function ifStatement(): AST.IfStatement {
@@ -181,7 +189,8 @@ function ifStatement(): AST.IfStatement {
     return new AST.IfStatement({ cond: condExpr, body, elseBody });
 }
 
-function statement(): AST.Statement {
+// If noSemi, don't expect a semi before returning. Used for for loops
+function statement(noSemi?: boolean): AST.Statement {
     // TODO for loop, do-while
     if (accept('return')) {
         const ret = new AST.ReturnStatement(expr());
@@ -200,6 +209,45 @@ function statement(): AST.Statement {
             body.push(statement());
         }
         return new AST.WhileStatement({ cond: condExpr, body });
+    } else if (accept('do')) {
+        expect('{');
+        const body = [];
+        while (!accept('}')) {
+            body.push(statement());
+        }
+        expect('while');
+        expect('(');
+        const condExpr = expr();
+        expect(')');
+        expect(';');
+        return new AST.DoWhileStatement({ cond: condExpr, body })
+    } else if (accept('for')) {
+        expect('(');
+        let decl, cond, update, body = [];
+        if (cur !== ';') {
+            decl = statement(true);
+        } else {
+            expect(';');
+        }
+
+        if (cur !== ';') {
+            cond = expr();
+            expect(';');
+        } else {
+            expect(';');
+        }
+
+        if (cur !== ')') {
+            update = statement(true); // true for no semicolon
+        }
+        expect(')');
+        expect('{');
+        while (!accept('}')) {
+            body.push(statement());
+        }
+
+        return new AST.ForLoop({ decl, cond, update, body })
+
     } else if (accept('continue')) {
         expect(';');
         return new AST.ContinueStatement();
@@ -223,11 +271,17 @@ function statement(): AST.Statement {
         expect(']');
         expect('=');
         const val = expr();
-        expect(';');
+        if (!noSemi) expect(';');
         return new AST.SetArray(ident, offset, val);
+    } else if (ASSIGNMENT_OPS.includes(peek(0))) {
+        const vari = new AST.Variable(expectIdent());
+        const op = expect(ASSIGNMENT_OPS);
+        const rval = expr();
+        if (!noSemi) expect(';');
+        return new AST.AssignmentOp(vari, op, rval);
     } else {
         const ret = expr();
-        expect(';');
+        if (!noSemi) expect(';');
         return ret;
     }
 }

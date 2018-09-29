@@ -75,6 +75,42 @@ class Function {
         this.body.push(new Instr(name, args));
     }
 
+    doWhile(stmt: (AST.DoWhileStatement | AST.WhileStatement)) {
+        this.instr('loop');
+        stmt.body.forEach(innerStmt => {
+            this.statement(innerStmt);
+        });
+
+        this.expr(stmt.cond);
+        this.instr('br_if', 0);
+        this.instr('end');
+    }
+
+    declareVar(stmt: AST.DeclareVar) {
+        let arr = false;
+        if (stmt.type instanceof Types.Array) {
+            arr = true;
+            const sz = stmt.type.size;
+            const idx = this.compiler.addGlobalArray(sz);
+            this.addLocal(stmt.ident, WasmType.i32);
+            this.instr('i32.const', idx);
+            this.instr('set_local', this.getVar(stmt.ident));
+        } else {
+            this.addLocal(stmt.ident, <WasmType> typeToWasmType(stmt.type));
+        }
+
+        if (stmt.expr) {
+            if (arr) { throw new Error('Inline initialization of arrays not supported yet'); }
+            this.expr(stmt.expr);
+            this.instr('set_local', this.getVar(stmt.ident));
+        }
+    }
+
+    setLocalVar(stmt: AST.SetLocalVar) {
+        this.expr(stmt.expr);
+        this.instr('set_local', this.getVar(stmt.ident));
+    }
+
     statement(stmt: AST.Statement) {
         // Call
         if (stmt instanceof AST.FunctionCall) {
@@ -88,28 +124,18 @@ class Function {
 
         // Set variable
         } else if (stmt instanceof AST.SetLocalVar) {
-            this.expr(stmt.expr);
-            this.instr('set_local', this.getVar(stmt.ident));
+            this.setLocalVar(stmt);
 
         // Define variable
         } else if (stmt instanceof AST.DeclareVar) {
-            let arr = false;
-            if (stmt.type instanceof Types.Array) {
-                arr = true;
-                const sz = stmt.type.size;
-                const idx = this.compiler.addGlobalArray(sz);
-                this.addLocal(stmt.ident, WasmType.i32);
-                this.instr('i32.const', idx);
-                this.instr('set_local', this.getVar(stmt.ident));
-            } else {
-                this.addLocal(stmt.ident, <WasmType> typeToWasmType(stmt.type));
-            }
+            this.declareVar(stmt);
 
-            if (stmt.expr) {
-                if (arr) { throw new Error('Inline initialization of arrays not supported yet'); }
-                this.expr(stmt.expr);
-                this.instr('set_local', this.getVar(stmt.ident));
-            }
+        // AssignmentOp (+=, -=, etc)
+        } else if (stmt instanceof AST.AssignmentOp) {
+            const varIdx = this.pushVar(stmt.lval.ident);
+            this.expr(stmt.expr);
+            this.arithmetic(stmt.op[0], Types.Int);
+            this.instr('set_local', varIdx);
 
         // Set array
         } else if (stmt instanceof AST.SetArray) {
@@ -139,19 +165,35 @@ class Function {
             this.instr('end');
             this.ifDepth--;
 
+        } else if (stmt instanceof AST.DoWhileStatement) {
+            this.doWhile(stmt);
+
         // While
         } else if (stmt instanceof AST.WhileStatement) {
             this.expr(stmt.cond);
             this.instr('if');
-            this.instr('loop');
-            stmt.body.forEach(innerStmt => {
-                this.statement(innerStmt);
-            });
+            this.doWhile(stmt);
+            this.instr('end');
 
-            this.expr(stmt.cond);
-            this.instr('br_if', 0);
-            this.instr('end');
-            this.instr('end');
+        // For loop
+        } else if (stmt instanceof AST.ForLoop) {
+            if (stmt.decl instanceof AST.DeclareVar) {
+                this.declareVar(stmt.decl);
+            } else if (stmt.decl instanceof AST.SetLocalVar) {
+                this.setLocalVar(stmt.decl);
+            }
+            if (stmt.update) {
+                stmt.body.push(stmt.update);
+            }
+            if (stmt.cond) {
+                this.expr(stmt.cond);
+                this.instr('if');
+                this.doWhile(new AST.DoWhileStatement({ cond: stmt.cond, body: stmt.body }));
+                this.instr('end');
+            } else {
+                this.doWhile(new AST.DoWhileStatement({ cond: new AST.ConstExpr(1, Types.Int),
+                                                        body: stmt.body }));
+            }
 
         // Break
         } else if (stmt instanceof AST.BreakStatement) {
@@ -284,9 +326,12 @@ class Function {
         return idx;
     }
 
-    pushVar(ident: string) {
-        this.instr('get_local', this.getVar(ident));
+    pushVar(ident: string): number {
+        const idx = this.getVar(ident);
+        this.instr('get_local', idx);
         this.stack.push(ident);
+
+        return idx;
     }
 
     pushConst(e: AST.ConstExpr) {

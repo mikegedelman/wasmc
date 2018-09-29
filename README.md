@@ -118,14 +118,13 @@ Opts:
 
 # Roadmap
 
+* Add type checking
 * Properly implement operator precedence
   - Currently it's just in the order given, but parens are supported
   - Because of this be really careful with conditional expressions, `&&` is currently equivalent to `&`
     and could cause confusion
 * Preprocessor/multiple file support
-* Add `do-while`, `for` loops
 * Support for structs
-* Add type checking
 * Flesh out a std library with `printf`, etc
 * Use a stack for local arrays; currently all arrays are stored in global memory and never freed.
 * malloc/free support

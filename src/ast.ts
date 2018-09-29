@@ -32,6 +32,10 @@ class UnaryOp implements ASTNode {
     constructor(public base: Expr, public op: string, public postfix?: boolean) {}
 }
 
+class AssignmentOp implements ASTNode {
+    constructor(public lval: Variable, public op: string, public expr: Expr) {}
+}
+
 class ArrayOffset implements ASTNode {
     constructor(public ident: Expr, public offset: Expr) {}
 }
@@ -81,9 +85,25 @@ class WhileStatement implements ASTNode {
     cond: Expr
     body: Statement[]
 
-    constructor(obj: {cond: Expr, body: Statement[] }) {
+    constructor(obj: {cond: Expr, body: Statement[]}) {
         this.cond = obj.cond;
         this.body = obj.body;
+    }
+}
+
+class DoWhileStatement extends WhileStatement {}
+
+class ForLoop implements ASTNode {
+    decl?: (DeclareVar | SetLocalVar)
+    update?: Statement
+    cond?: Expr
+    body: Statement[]
+
+    constructor(obj: {cond: Expr, body: Statement[], decl: DeclareVar, update: Statement}) {
+        this.cond = obj.cond;
+        this.body = obj.body;
+        this.decl = obj.decl;
+        this.update = obj.update;
     }
 }
 
@@ -138,6 +158,7 @@ class FunctionDefinition implements ASTNode {
 
 export { Variable, ConstExpr, FunctionCall, GlobalDefinition,
          FunctionDefinition, ReturnStatement, ASTNode, SetLocalVar, DeclareVar,
-         FunctionParam, StringConstant, IfStatement, WhileStatement, ContinueStatement,
-         BreakStatement, SetArray, ArrayOffset,
-         Statement, Expr, BinaryOp, UnaryOp };
+         FunctionParam, StringConstant, IfStatement, WhileStatement, DoWhileStatement,
+         ContinueStatement,
+         BreakStatement, SetArray, ArrayOffset, ForLoop,
+         Statement, Expr, BinaryOp, UnaryOp, AssignmentOp };
