@@ -6,7 +6,7 @@ import { argv } from 'yargs';
 
 import { lex } from './lex';
 import { parse } from './parse';
-import { compile as compileWat } from './wasm';
+import { compile } from './wasm';
 import { takeWhile } from './utility';
 import { runWasmc } from './run';
 
@@ -45,7 +45,7 @@ function compileWast(ast: any, _opts: { wastOnly?: boolean, outfile?: string, ke
         + '  (import "env" "log" (func $log (param i32)))\n'
         + '  (import "env" "logInt" (func $logInt (param i32)))\n'
         + '  (import "env" "memory" (memory 1))\n\n';
-    const wast = compileWat(ast);
+    const wast = compile(ast);
 
     writeFileSync(wastOutfile, wastHeader + wast + ')');
     if (opts.wastOnly) {
@@ -73,25 +73,19 @@ function main() {
         console.log(JSON.stringify(ast, null, 2));
     }
 
-    const target = argv.t || 'wasm';
+    const compilePromise = compileWast(ast, { 
+        wastOnly: argv.S,
+        keepWast: argv.i,
+        outfile: argv.o,
+    });
 
-    if (target === 'wasm') {
-        const compilePromise = compileWast(ast, { 
-            wastOnly: argv.S,
-            keepWast: argv.i,
-            outfile: argv.o,
+    if (!argv.S) {
+        compilePromise.then((wasmName) => {
+            if (argv.r) {
+                const buf = readFileSync(wasmName);
+                runWasmc(buf);
+            }
         });
-
-        if (!argv.S) {
-            compilePromise.then((wasmName) => {
-                if (argv.r) {
-                    const buf = readFileSync(wasmName);
-                    runWasmc(buf);
-                }
-            });
-        }
-    } else {
-        console.error(`Unsupported target ${argv.t}`);
     }
 }
 

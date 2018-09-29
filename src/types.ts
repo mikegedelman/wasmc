@@ -1,4 +1,9 @@
 const BASE_TYPES = ['int', 'float', 'char', 'void'];
+const BINARY_OPS = ['+', '-', '*', '/', '=', '<', '>', '<=', '>=', '==', '!=',
+                    '&', '&&', '|', '||', '^'];
+const PREFIX_UNARY_OPS = [`++`, `--`, `!`, `*`, `&`, `~`];
+const POSTFIX_UNARY_OPS = [`++`, `--`];
+const ALL_OPS = [...BINARY_OPS, ...PREFIX_UNARY_OPS, ...BINARY_OPS];
 
 class Type {
     constructor(public name: string) {}
@@ -43,4 +48,4 @@ const Types = {
     Array: ArrayType
 };
 
-export { BASE_TYPES, Type, Types };
+export { BASE_TYPES, BINARY_OPS, PREFIX_UNARY_OPS, POSTFIX_UNARY_OPS, ALL_OPS, Type, Types };

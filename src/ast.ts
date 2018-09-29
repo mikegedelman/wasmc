@@ -2,7 +2,7 @@ import { Type, Types } from './types';
 
 interface ASTNode {}
 
-type Expr = ConstExpr | Variable | StringConstant | FunctionCall | BinaryOp | ArrayOffset;
+type Expr = ConstExpr | Variable | StringConstant | FunctionCall | BinaryOp | ArrayOffset | UnaryOp;
 type Statement = ReturnStatement | SetLocalVar | DeclareVar | IfStatement
                | WhileStatement | ContinueStatement | BreakStatement 
                | SetArray | Expr;
@@ -26,6 +26,10 @@ class ReturnStatement implements ASTNode
 
 class BinaryOp implements ASTNode {
     constructor(public left: Expr, public right: Expr, public op: string) {}
+}
+
+class UnaryOp implements ASTNode {
+    constructor(public base: Variable, public op: string, public postfix?: boolean) {}
 }
 
 class ArrayOffset implements ASTNode {
@@ -136,4 +140,4 @@ export { Variable, ConstExpr, FunctionCall, GlobalDefinition,
          FunctionDefinition, ReturnStatement, ASTNode, SetLocalVar, DeclareVar,
          FunctionParam, StringConstant, IfStatement, WhileStatement, ContinueStatement,
          BreakStatement, SetArray, ArrayOffset,
-         Statement, Expr, BinaryOp };
+         Statement, Expr, BinaryOp, UnaryOp };

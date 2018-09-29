@@ -1,16 +1,16 @@
 import * as AST from './ast';
-import { BASE_TYPES, Type, Types } from './types';
+import { BASE_TYPES, BINARY_OPS, PREFIX_UNARY_OPS, POSTFIX_UNARY_OPS, Type, Types } from './types';
 
 const VALID_IDENT_REGEX = /^([a-zA-Z_]+[a-zA-Z0-9_]*|[0-9]*)$/;
 const FLOAT_REGEX = /^[0-9]+\.[0-9]+$/;
 const INT_REGEX = /^[0-9]+$/;
-const BINARY_OPS = ['+', '-', '*', '/', '=', '<', '>', '<=', '>=', '==', '!=',
-                    '&', '&&', '|', '||', '^'];
 
-let toks, cur, stash, shouldStash;
+
+let toks, cur, lastAccept;
 
 function next() {
     cur = (toks.shift() || {}).val;
+    // console.log(cur);
 }
 
 function peek(idx: number) {
@@ -43,9 +43,9 @@ function accept(s: string | string[] | RegExp): any {
     }
 
     if (test) {
-        const ret = cur;
+        lastAccept = cur;
         next();
-        return ret;
+        return lastAccept;
     }
 
     return false;
@@ -133,15 +133,21 @@ function expr(): AST.Expr {
         } else {
             return ret;
         }
+    } else if (accept(PREFIX_UNARY_OPS)) {
+        const op = lastAccept;
+        return new AST.UnaryOp(new AST.Variable(expectIdent()), op);
     } else {
         const ident = expectIdent();
 
-        if (accept('(')) {
+        if (accept('(')) {    
             return functionCall(ident);
         } else if (accept('[')) {
             const offset = expr();
             expect(']');
             return new AST.ArrayOffset(getIdent(ident), offset);
+        } else if (accept(POSTFIX_UNARY_OPS)) {
+            const op = lastAccept;
+            return new AST.UnaryOp(new AST.Variable(ident), op, true);
         } else if (BINARY_OPS.includes(cur)) {
             return binaryOp(getIdent(ident));
         } else {

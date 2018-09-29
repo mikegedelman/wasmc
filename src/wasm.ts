@@ -24,7 +24,7 @@ class Instr {
     }
 }
 
-class WasmGlobal {
+class Global {
     constructor (public val: any, public idx: number) {}
 
     serialize() {
@@ -36,13 +36,13 @@ class WasmGlobal {
     }
 }
 
-class WasmFunction {
+class Function {
     name: string
     type: WasmType
     params: WasmType[]
     locals: WasmType[] = []
     body: Instr[] = []
-    compiler: WasmCompiler
+    compiler: Compiler
 
     private identMap: any = {}
     private localCounter: number = 0
@@ -52,7 +52,7 @@ class WasmFunction {
     private ifDepth: number = 0 // We need to know how deeply nested we are in if-statements
                                 // so we can break out of the nearest loop when necessary
 
-    constructor(compiler: WasmCompiler, fn: AST.FunctionDefinition) {
+    constructor(compiler: Compiler, fn: AST.FunctionDefinition) {
         this.compiler = compiler;
         this.name = fn.ident;
         this.type = <WasmType>typeToWasmType(fn.type);
@@ -160,11 +160,15 @@ class WasmFunction {
         // Continue
         } else if (stmt instanceof AST.ContinueStatement) {
             this.instr('br', 0);
+
+        // Assume it's an expr
+        } else {
+            this.expr(stmt, true);
         }
 
     }
 
-    expr(expr: AST.Expr) {
+    expr(expr: AST.Expr, topLevel?: boolean) {
         if (expr instanceof AST.FunctionCall) {
             this.fnCall(expr);
         } else if (expr instanceof AST.Variable) {
@@ -175,10 +179,12 @@ class WasmFunction {
            this.stringConstant(expr);
        } else if (expr instanceof AST.BinaryOp) {
            this.binaryOp(expr);
+       } else if (expr instanceof AST.UnaryOp) {
+           this.unaryOp(expr, !topLevel);
        } else if (expr instanceof AST.ArrayOffset) {
            this.arrayOffset(expr);
        } else {
-           throw new Error(`Unexpected expr ${expr}`);
+           throw new Error(`Unexpected expr type ${(<any>expr).constructor.name}`);
        }
     }
 
@@ -186,6 +192,21 @@ class WasmFunction {
         this.expr(expr.left);
         this.expr(expr.right);
         this.arithmetic(expr.op, Types.Int)
+    }
+
+    unaryOp(expr: AST.UnaryOp, resultIsUsed: boolean) {
+        if (['++', '--'].includes(expr.op)) {
+            if (expr.postfix && resultIsUsed) {
+                this.pushVar(expr.base.ident);
+            }
+            this.pushVar(expr.base.ident);
+            this.instr('i32.const', 1);
+            this.arithmetic(expr.op.substr(1), Types.Int); // TODO
+            this.instr(expr.postfix || !resultIsUsed ? 'set_local' : 'tee_local',
+                       this.getVar(expr.base.ident));
+        }
+
+        // throw new Error(`Unexpected unary op ${expr.op}`);
     }
 
     stringConstant(expr: AST.StringConstant) {
@@ -265,7 +286,7 @@ class WasmFunction {
         this.stack.push(e.val);
     }
 
-    serialize(): string { // TODO
+    serialize(): string {
         let ret = `(func $${this.name} (export "${this.name}") ` 
                 + this.params.map(p => `(param ${p})`).join(' ');
 
@@ -282,9 +303,9 @@ class WasmFunction {
     }
 }
 
-class WasmCompiler {
-    globals: WasmGlobal[]
-    functions: WasmFunction[]
+class Compiler {
+    globals: Global[]
+    functions: Function[]
 
     // Where in memory to put the next global
     private globalIdx: number = 1
@@ -301,7 +322,7 @@ class WasmCompiler {
         const ret = this.globalIdx;
         const str = <string> val;
 
-        this.globals.push(new WasmGlobal(str, this.globalIdx));
+        this.globals.push(new Global(str, this.globalIdx));
         this.globalIdx += str.length + 1; // add one for null terminator
 
         return ret;
@@ -316,7 +337,7 @@ class WasmCompiler {
     compile() {
         this.astList.forEach(ast => {
             if (ast instanceof AST.FunctionDefinition) {
-                const fn = new WasmFunction(this, <AST.FunctionDefinition>ast);
+                const fn = new Function(this, <AST.FunctionDefinition>ast);
                 this.functions.push(fn);
             } else {
                 throw new Error('Not yet supported');
@@ -344,7 +365,7 @@ function typeToWasmType(t: Type): WasmType {
 }
 
 function compile(ast) {
-    const compiler = new WasmCompiler(ast);
+    const compiler = new Compiler(ast);
     compiler.compile();
     return compiler.serialize();
 }

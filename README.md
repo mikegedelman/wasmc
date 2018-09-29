@@ -67,10 +67,11 @@ int x = 10;
 while (x > 0) {
     if (x == 5) {
         // Don't print 5
+        x--;
         continue;
     }
     logInt(x);
-    x = x - 1;
+    x--;
 
     if (x < 2) {
         // Exit loop early
@@ -84,6 +85,10 @@ while (x > 0) {
 ### Operators
 
 Supported binary operators: `+`, `-`, `*`, `/`, `>`, `<`, `>=`, `<=`, `==`, `!=`, `&&`, `&`, `||`, `|`, `^`
+
+Assignment operators: `+=`, `-=`, `*=`, `/=`, `&=`, `|=`, `^=`
+
+Unary operators: `++`, `--`, `!`, `*`, `&`, `~`
 
 ### Provided Functions
 
@@ -113,7 +118,6 @@ Opts:
 
 # Roadmap
 
-* Unary operators, assignment operators
 * Properly implement operator precedence
   - Currently it's just in the order given, but parens are supported
   - Because of this be really careful with conditional expressions, `&&` is currently equivalent to `&`

@@ -1,10 +1,7 @@
 import { takeWhile } from './utility';
+import { ALL_OPS } from './types';
 
-// The following two lists are strings that should always get their own token.
-const TOKENIZE_CHARS = ['(', ')', '[', ']', '{', '}', '<', '>', '=',
-                        '*', '+', '-', '/', ';', ',', '&', '|', '^',
-                        '!'];
-const TOKENIZE_DOUBLE_CHARS = ['==', '!=', '<=', '>=', '||', '&&', '>>', '<<'];
+const TOKENIZE_STRINGS = [...ALL_OPS, '(', ')', '{', '}', ',', ';'];
 
 class Token {
     constructor(public val: string, public line: number, public isStringLiteral?: boolean) {}
@@ -15,10 +12,7 @@ function isWhitespace(ch: string): boolean {
 }
 
 function isWord(ch: string): boolean {
-    return ch >= 'a' && ch <= 'z' || 
-        ch >= 'A' && ch <= 'Z' ||
-        ch >= '0' && ch <= '9' ||
-        /[-_]/.test(ch);
+    return /([a-z]+|[A-Z]+|[0-9]+|_+)/.test(ch);
 }
 
 function charsToString(arr: string[]): string {
@@ -54,16 +48,15 @@ function lex(raw: string): Token[] {
             idx += matching.length + 3;
             line += (matching.match(/\n/) || []).length;
 
+        // Tokenize double chars
+        } else if (TOKENIZE_STRINGS.includes(ch + next)) {
+            ret.push(new Token(ch + next, line));
+            idx += 2;
+
         // Tokenize individual chars
-        } else if (TOKENIZE_CHARS.includes(ch)) {
-            const doubleChar = ch + next;
-            if (TOKENIZE_DOUBLE_CHARS.includes(doubleChar)) {
-                ret.push(new Token(doubleChar, line));
-                idx += 2;
-            } else {
-                ret.push(new Token(ch, line));
-                idx++;
-            }
+        } else if (TOKENIZE_STRINGS.includes(ch)) {
+            ret.push(new Token(ch, line));
+            idx++;
 
         // Tokenize a string constant
         } else if (ch == '"') {
