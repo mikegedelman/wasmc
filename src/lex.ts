@@ -1,7 +1,7 @@
 import { takeWhile } from './utility';
 
-const RESERVED_WORDS = ['define', 'function', 'var', 'set', 'if', 'int', 'float',
-                        'string', 'void', 'return', '=', '>=', '<=', '<', '>'];
+const RESERVED_WORDS = ['define', 'function', 'var', 'set', 'if', 'else', 'int', 'float',
+                        'while', 'string', 'void', 'return'];
 const IDENT = '__IDENT__';
 
 class Token {

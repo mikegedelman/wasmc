@@ -17,7 +17,7 @@ class Pointer extends Type {
 
     constructor (public wrappedType: Type) {
         super('this gets overwritten');
-        this.name = `*${wrappedType}`;
+        this.name = `*${wrappedType.name}`;
     }
 }
 
@@ -25,14 +25,14 @@ class ArrayType extends Type {
     name: string
     constructor (public wrappedType: Type, public size: number) {
         super('this gets overwritten');
-        this.name = `${wrappedType}[${size}]`;
+        this.name = `${wrappedType.name}[${size}]`;
     }
 }
 
 const Types = {
     Float: new Type('float'),
     Int: new Type('int'),
-    VoidType: new Type('void'),
+    Void: new Type('void'),
     Char: new Type('char'),
     Pointer: Pointer,
     Array: ArrayType
@@ -41,7 +41,7 @@ const Types = {
 const baseTypes = {
     'int': Types.Int,
     'float': Types.Float,
-    'void': Types.VoidType,
+    'void': Types.Void,
     'char': Types.Char
 }
 
@@ -106,9 +106,31 @@ class DeclareLocalVar implements ASTNode {
         this.ident = obj.ident;
         this.type = makeType(obj.type);
 
-        if (this.expr) {
-            this.expr = makeExpr(this.expr);
+        if (obj.expr) {
+            this.expr = makeExpr(obj.expr);
         }
+    }
+}
+
+class IfStatement implements ASTNode {
+    cond: ASTNode
+    body: ASTNode[]
+    elseBody: ASTNode[]
+
+    constructor(obj: {cond: any, body: any, elseBody: any}) {
+        this.cond = makeExpr(obj.cond);
+        this.body = obj.body.map(stmt => makeStatement(stmt));
+        this.elseBody = obj.elseBody.map(stmt => makeStatement(stmt));
+    }
+}
+
+class WhileStatement implements ASTNode {
+    cond: ASTNode
+    body: ASTNode[]
+
+    constructor(obj: {cond: any, body: any}) {
+        this.cond = makeExpr(obj.cond);
+        this.body = obj.body.map(stmt => makeStatement(stmt));
     }
 }
 
@@ -161,7 +183,7 @@ function makeExpr(expr: any): FunctionCall | ConstExpr | Variable | StringConsta
     }
 }
 
-function makeStatement(stmt: any): FunctionCall | ReturnStatement | SetLocalVar | DeclareLocalVar {
+function makeStatement(stmt: any): FunctionCall | ReturnStatement | SetLocalVar | DeclareLocalVar | IfStatement | WhileStatement {
     if (!stmt) { throw new Error('Fatal: found undefined statement'); }
 
     if (stmt.name === 'FunctionCall') {
@@ -172,6 +194,10 @@ function makeStatement(stmt: any): FunctionCall | ReturnStatement | SetLocalVar 
         return new SetLocalVar(stmt);
     } else if (stmt.name === 'DeclareLocalVar') {
         return new DeclareLocalVar(stmt);
+    } else if (stmt.name === 'IfStatement') {
+        return new IfStatement(stmt);
+    } else if (stmt.name === 'WhileStatement') {
+        return new WhileStatement(stmt);
     } else {
         throw new Error(`Unexpected function body statement: ${JSON.stringify(stmt)}`);
     }
@@ -181,10 +207,11 @@ function makeType(typeName: string): Type {
     // let workType = typeName;
     const firstStar = typeName.indexOf('*');
     const firstBracket = typeName.indexOf('[');
-    const firstSym = Math.min(firstStar, firstBracket);
+    const firstSym = Math.min(firstStar > -1 ? firstStar : Infinity,
+                              firstBracket > -1 ? firstBracket : Infinity);
 
     let baseTypeName = typeName;
-    if (firstSym > -1) {
+    if (firstSym < Infinity) {
         baseTypeName = typeName.slice(0, firstSym);
     }
     let ret = baseTypes[baseTypeName];
@@ -194,7 +221,7 @@ function makeType(typeName: string): Type {
     }
     
     if (firstBracket > -1) {
-        let brackets = typeName.slice(firstBracket);
+        let brackets = typeName.slice(firstBracket + 1);
         while (brackets !== '') {
             const nextBracket = brackets.indexOf(']');
             const num = brackets.slice(0, nextBracket);
@@ -204,7 +231,7 @@ function makeType(typeName: string): Type {
             }
 
             ret = new Types.Array(ret, sz);
-            brackets = brackets.slice(nextBracket + 1);
+            brackets = brackets.slice(nextBracket + 2);
         }
     }
 
@@ -242,4 +269,4 @@ function buildAST(parseData: any[]) {
 
 export { buildAST, Type, Types, Variable, ConstExpr, FunctionCall, GlobalDefinition,
          FunctionDefinition, ReturnStatement, ASTNode, SetLocalVar, DeclareLocalVar,
-         makeType, StringConstant };
+         makeType, StringConstant, IfStatement, WhileStatement, ArrayType };

@@ -14,6 +14,7 @@
     "mocha": "^5.2.0"
   },
   "dependencies": {
-    "libclang": "0.0.11"
+    "libclang": "0.0.11",
+    "yargs": "^12.0.2"
   }
 }

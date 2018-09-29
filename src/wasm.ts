@@ -1,5 +1,6 @@
 import { FunctionDefinition, FunctionCall, Type, ASTNode, Variable, ConstExpr,
-         ReturnStatement, SetLocalVar, DeclareLocalVar, Types, StringConstant } from './ast';
+         ReturnStatement, SetLocalVar, DeclareLocalVar, Types, StringConstant,
+         IfStatement, WhileStatement, ArrayType } from './ast';
 
 enum WasmType {
     i32 = 'i32',
@@ -49,6 +50,8 @@ class WasmFunction {
     private stack: any[] = []  // Represent values currently on the local stack
     private returnType: any = false  // Later this will be an actual type for type checking
 
+    private loopCounter: number = 0 // For unique loop labels
+
     constructor(compiler: WasmCompiler, fn: FunctionDefinition) {
         this.compiler = compiler;
         this.name = fn.ident;
@@ -87,13 +90,53 @@ class WasmFunction {
             this.instr('set_local', this.getVar(stmt.ident));
         // Define variable
         } else if (stmt instanceof DeclareLocalVar) {
-            this.addLocal(stmt.ident, <WasmType> typeToWasmType(stmt.type));
+            let arr = false;
+            if (stmt.type instanceof ArrayType) {
+                arr = true;
+                const sz = (<ArrayType> stmt.type).size;
+                const idx = this.compiler.addGlobalArray(sz);
+                this.addLocal(stmt.ident, WasmType.i32);
+                this.instr('i32.const', idx);
+                this.instr('set_local', this.getVar(stmt.ident));
+            } else {
+                this.addLocal(stmt.ident, <WasmType> typeToWasmType(stmt.type));
+            }
 
             if (stmt.expr) {
+                if (arr) { throw new Error('Inline initialization of arrays not supported yet'); }
                 // TODO this is copypasted from directly above
                 this.expr(stmt.expr);
                 this.instr('set_local', this.getVar(stmt.ident));
             }
+        } else if (stmt instanceof IfStatement) {
+            this.expr(stmt.cond);
+            this.instr('if');
+            stmt.body.forEach(innerStmt => {
+                this.statement(innerStmt);
+            });
+            if (stmt.elseBody.length) {
+                this.instr('else');
+                stmt.elseBody.forEach(innerStmt => {
+                    this.statement(innerStmt);
+                });
+            }
+            this.instr('end');
+        } else if (stmt instanceof WhileStatement) {
+            let loopLabel = `$${this.loopCounter}`;
+            this.loopCounter++;
+
+            this.expr(stmt.cond);
+            this.instr('if');
+            this.instr('loop', loopLabel);
+            this.loopCounter++;
+            stmt.body.forEach(innerStmt => {
+                this.statement(innerStmt);
+            });
+
+            this.expr(stmt.cond);
+            this.instr('br_if', loopLabel);
+            this.instr('end');
+            this.instr('end');
         }
 
     }
@@ -102,21 +145,20 @@ class WasmFunction {
         if (expr instanceof FunctionCall) {
             this.fnCall(expr);
         } else if (expr instanceof Variable) {
-            if (this.peekStack() !== expr.ident) {
-                this.pushVar(expr.ident);
-            }
+            this.pushVar(expr.ident);
        } else if (expr instanceof ConstExpr) {
             this.pushConst(expr);
        } else if (expr instanceof StringConstant) {
            this.stringConstant(expr);
+       } else {
+           throw new Error(`Unexpected expr ${expr}`);
        }
     }
 
     stringConstant(expr: StringConstant) {
         const str = expr.val;
-        const idx = this.compiler.addGlobal(str, 'StringConstant'); // todo hack alert
+        const idx = this.compiler.addGlobalString(str); // todo hack alert (passing second arg as string)
         this.instr('i32.const', idx);
-        // this.instr('i32.load');
     }
 
     /// Create a new local var
@@ -133,7 +175,13 @@ class WasmFunction {
             '+': 'add',
             '-': 'sub',
             '*': 'mul',
-            '/': 'div'
+            '/': 'div',
+            '=': 'eq',
+            '!=': 'ne',
+            '<': 'lt_s',
+            '>': 'gt_s',
+            '<=': 'le_s',
+            '>=': 'ge_s'
         };
         const instr = `${typeToWasmType(type)}.${instrMap[ident]}`;
         this.instr(instr);
@@ -141,12 +189,32 @@ class WasmFunction {
 
     fnCall(fnCall: FunctionCall) {
         const args = fnCall.args;
+
+        // Special case for setAt and getAt... might be a better way to handle this?
+        if (fnCall.ident === 'setAt') {
+            const [arrIdent, offset, val] = args;
+            this.expr(arrIdent);
+            this.expr(offset);
+            this.instr('i32.add');
+
+            this.expr(val);
+            this.instr('i32.store8');
+            return;
+        } else if (fnCall.ident === 'getAt') {
+            const [arrIdent, offset] = args;
+            this.expr(arrIdent);
+            this.expr(offset);
+            this.instr('i32.add');
+            this.instr('i32.load8_s');
+            return;
+        }
+
         const types: Type[] = [];
         args.forEach(arg => {
             this.expr(arg);
         });
 
-        if (['+', '-', '/', '*'].indexOf(fnCall.ident) > -1) {
+        if (['+', '-', '/', '*', '>', '<', '=', '!=', '>=', '<='].indexOf(fnCall.ident) > -1) {
             if (args.length !== 2) {
                 throw new Error(`${fnCall.ident} operation accepts exactly two args`);
             }
@@ -178,10 +246,6 @@ class WasmFunction {
         this.stack.push(e.val);
     }
 
-    peekStack() {
-        return this.stack.slice(-1).pop()
-    }
-
     serialize(): string { // TODO
         let ret = `(func $${this.name} (export "${this.name}") ` 
                 + this.params.map(p => `(param ${p})`).join(' ')
@@ -207,26 +271,19 @@ class WasmCompiler {
         this.functions = [];
     }
 
-    /// TODO passing nodeType in here is kind of a shortcut
-    addGlobal(val: any, nodeType: string): number {
+    addGlobalString(val: any): number {
         const ret = this.globalIdx;
-        if (nodeType === 'StringConstant') {
-            const str = <string> val;
-            const sz = str.length;
+        const str = <string> val;
 
-            this.globals.push(new WasmGlobal(str, this.globalIdx));
-            this.globalIdx += val.length;
+        this.globals.push(new WasmGlobal(str, this.globalIdx));
+        this.globalIdx += str.length + 1; // add one for null terminator
 
-            // TODO this is a hack but I can't get wast to serialize the null in null terminated strings
-            // this.globals.push(new WasmGlobal(0, this.globalIdx));
-            // this.globalIdx++;
-        } else {
-            this.globals.push(new WasmGlobal(val, this.globalIdx));
-            this.globalIdx++;
-        }
+        return ret;
+    }
 
-
-
+    addGlobalArray(sz: number): number {
+        const ret = this.globalIdx;
+        this.globalIdx += sz;
         return ret;
     }
 
@@ -250,7 +307,7 @@ class WasmCompiler {
 function typeToWasmType(t: Type): WasmType {
     if (t === Types.Float) {
         return WasmType.f32;
-    } else if (t === Types.Int) {
+    } else if (t === Types.Int || t instanceof Types.Pointer || t instanceof Types.Array) {
         return WasmType.i32;
     } else {
         throw new Error(`Can't convert ${t.name} to WasmType`);

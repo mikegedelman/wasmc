@@ -74,10 +74,11 @@ describe('AST', () => {
             ['char**[25]', new Types.Array(new Types.Pointer(new Types.Pointer(Types.Char)), 25)],
         ];
 
-        // cases.forEach(case => {
-        //     const expected = case[1];
-        //     const actual = makeType(case[0]);
-        //     expect(actual.equals(expected)).to.be(true);
-        // });
+        cases.forEach(testCase => {
+            const expected = testCase[1];
+            const actual = makeType(testCase[0]);
+            console.log(actual);
+            expect(actual.equals(expected)).to.equal(true);
+        });
     });
 });

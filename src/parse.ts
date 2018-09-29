@@ -117,9 +117,16 @@ class Parser {
     }
 
     type() {
-        const types = ['int', 'float', 'void'];
+        const types = ['int', 'float', 'void', 'char'];
+        let containsType = false;
 
-        if (types.indexOf(this.cur.val) === -1) {
+        types.forEach(t => {
+            if (this.cur.val.indexOf(t) > -1) {
+                containsType = true;
+            }
+        });
+
+        if (!containsType) {
             this.error(`Expected a type, found ${JSON.stringify(this.cur)}`);
         }
 
@@ -160,7 +167,31 @@ class Parser {
             ret.name = 'ReturnStatement';
             ret.expr = this.expr();
             this.expect(')');
-        // } else if this.accept('if')) {
+        } else if (this.accept('if')) {
+            ret.name = 'IfStatement';
+
+            ret.cond = this.expr();
+            ret.body = [];
+            ret.elseBody = [];
+            let curBody = ret.body;
+
+            while (this.cur.val !== ')') {
+                if (this.accept('else')) {
+                    curBody = ret.elseBody;
+                }
+                this.expect('(');
+                curBody.push(this.statement());
+            }
+            this.expect(')');
+        } else if (this.accept('while')) {
+            ret.name = 'WhileStatement';
+            ret.cond = this.expr();
+            ret.body = [];
+
+            while (this.accept('(')) {
+                ret.body.push(this.statement());
+            }
+            this.expect(')');
         } else {
             return this.functionCall();
         }
