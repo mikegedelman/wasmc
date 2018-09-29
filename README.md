@@ -89,6 +89,28 @@ Supported binary operators: `+`, `-`, `*`, `/`, `>`, `<`, `>=`, `<=`, `==`, `!=`
 
 Currently only: `void log(char*)` for strings and `void logInt(int)` for integers.
 
+# Setup
+
+Install https://github.com/WebAssembly/wabt.
+I know this is clunky, I will find a way to streamline this eventually.
+The compiler depends on `wast2wasm` being in your `$PATH`.
+
+```
+# ts-node is the easiest way, but you can also use tsc to compile, then run js from dist/ folder
+npm i -g typescript ts-node  # Or install these locall only, if you want
+npm i
+```
+
+`ts-node src/compile.ts [filename] <opts>`
+Opts:
+    * `-o` output filename, defaults to `a.out.wasm`
+    * `-S` generate wast only (default filename `a.out.wast`)
+    * `-i` keep intermediate wast
+    * `-r` immediately run generated wasm
+    * `-d` debug
+
+`ts-node src/run.ts [filename]`
+
 # Roadmap
 
 * Unary operators, assignment operators
