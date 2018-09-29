@@ -29,7 +29,7 @@ class BinaryOp implements ASTNode {
 }
 
 class UnaryOp implements ASTNode {
-    constructor(public base: Variable, public op: string, public postfix?: boolean) {}
+    constructor(public base: Expr, public op: string, public postfix?: boolean) {}
 }
 
 class ArrayOffset implements ASTNode {

@@ -135,7 +135,7 @@ function expr(): AST.Expr {
         }
     } else if (accept(PREFIX_UNARY_OPS)) {
         const op = lastAccept;
-        return new AST.UnaryOp(new AST.Variable(expectIdent()), op);
+        return new AST.UnaryOp(expr(), op);
     } else {
         const ident = expectIdent();
 

@@ -196,17 +196,23 @@ class Function {
 
     unaryOp(expr: AST.UnaryOp, resultIsUsed: boolean) {
         if (['++', '--'].includes(expr.op)) {
-            if (expr.postfix && resultIsUsed) {
-                this.pushVar(expr.base.ident);
+            if (!(expr.base instanceof AST.Variable)) {
+                throw new Error(`++ and -- can only be applied to variables (got: ${expr.constructor.name})`);
             }
-            this.pushVar(expr.base.ident);
+            if (expr.postfix && resultIsUsed) {
+                this.expr(expr.base);
+            }
+            this.expr(expr.base);
             this.instr('i32.const', 1);
             this.arithmetic(expr.op.substr(1), Types.Int); // TODO
             this.instr(expr.postfix || !resultIsUsed ? 'set_local' : 'tee_local',
-                       this.getVar(expr.base.ident));
+                       this.getVar((<AST.Variable>expr.base).ident));
+        } else if (expr.op === '!') {
+            this.expr(expr.base);
+            this.instr('i32.eqz');
+        } else {
+            throw new Error(`Unexpected unary op ${expr.op}`);
         }
-
-        // throw new Error(`Unexpected unary op ${expr.op}`);
     }
 
     stringConstant(expr: AST.StringConstant) {
