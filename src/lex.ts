@@ -1,7 +1,7 @@
 import { takeWhile } from './utility';
 import { ALL_OPS } from './types';
 
-const TOKENIZE_STRINGS = [...ALL_OPS, '(', ')', '{', '}', ',', ';'];
+const TOKENIZE_STRINGS = [...ALL_OPS, '(', ')', '{', '}', '[', ']', ',', ';'];
 
 class Token {
     constructor(public val: string, public line: number, public isStringLiteral?: boolean) {}

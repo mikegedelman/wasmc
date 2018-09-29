@@ -210,6 +210,11 @@ class Function {
         } else if (expr.op === '!') {
             this.expr(expr.base);
             this.instr('i32.eqz');
+        } else if (expr.op === '*') {
+            this.expr(expr.base);
+            this.instr('i32.load8_u');
+        // } else if (expr.op === '&') { ???? How do we do this?
+        //     this.expr(expr.base);
         } else {
             throw new Error(`Unexpected unary op ${expr.op}`);
         }
