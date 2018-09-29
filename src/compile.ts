@@ -6,8 +6,7 @@ import { argv } from 'yargs';
 
 import { lex } from './lex';
 import { parse } from './parse';
-import { buildAST } from './ast';
-import { WasmCompiler } from './wasm';
+import { compile as compileWat } from './wasm';
 import { takeWhile } from './utility';
 import { runWasmc } from './run';
 
@@ -35,8 +34,6 @@ function wast2wasm(wastName: string, wasmName: string, deleteWast: boolean): Pro
 /// Returns: promise with wasm filename
 function compileWast(ast: any, _opts: { wastOnly?: boolean, outfile?: string, keepWast?: boolean }): Promise<string> {
     const opts = _opts || {};
-    const compiler = new WasmCompiler(ast);
-    compiler.compile();
     
     let wastOutfile = WAST_FILENAME;
     if (opts.wastOnly && opts.outfile) {
@@ -48,7 +45,7 @@ function compileWast(ast: any, _opts: { wastOnly?: boolean, outfile?: string, ke
         + '  (import "env" "log" (func $log (param i32)))\n'
         + '  (import "env" "logInt" (func $logInt (param i32)))\n'
         + '  (import "env" "memory" (memory 1))\n\n';
-    const wast = compiler.serialize();
+    const wast = compileWat(ast);
 
     writeFileSync(wastOutfile, wastHeader + wast + ')');
     if (opts.wastOnly) {
@@ -71,8 +68,10 @@ function main() {
 
     const prog = readFileSync(filename).toString();
     const toks = lex(prog);
-    const parseIr = parse(toks);
-    const ast = buildAST(parseIr);
+    const ast = parse(toks);
+    if (argv.d) { // d for debug
+        console.log(JSON.stringify(ast, null, 2));
+    }
 
     const target = argv.t || 'wasm';
 

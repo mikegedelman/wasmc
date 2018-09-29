@@ -1,6 +1,5 @@
-import { FunctionDefinition, FunctionCall, Type, ASTNode, Variable, ConstExpr,
-         ReturnStatement, SetLocalVar, DeclareLocalVar, Types, StringConstant,
-         IfStatement, WhileStatement, ArrayType } from './ast';
+import * as AST from './ast';
+import { Type, Types } from './types';
 
 enum WasmType {
     i32 = 'i32',
@@ -50,9 +49,10 @@ class WasmFunction {
     private stack: any[] = []  // Represent values currently on the local stack
     private returnType: any = false  // Later this will be an actual type for type checking
 
-    private loopCounter: number = 0 // For unique loop labels
+    private ifDepth: number = 0 // We need to know how deeply nested we are in if-statements
+                                // so we can break out of the nearest loop when necessary
 
-    constructor(compiler: WasmCompiler, fn: FunctionDefinition) {
+    constructor(compiler: WasmCompiler, fn: AST.FunctionDefinition) {
         this.compiler = compiler;
         this.name = fn.ident;
         this.type = <WasmType>typeToWasmType(fn.type);
@@ -66,7 +66,7 @@ class WasmFunction {
         fn.body.forEach(stmt => this.statement(stmt));
 
         // TODO check for void
-        if (!this.returnType) {
+        if (!fn.type.equals(Types.Void) && !this.returnType) {
             throw new Error(`Function ${this.name} must return a value`);
         }
     }
@@ -75,25 +75,28 @@ class WasmFunction {
         this.body.push(new Instr(name, args));
     }
 
-    statement(stmt: ASTNode) {
+    statement(stmt: AST.Statement) {
         // Call
-        if (stmt instanceof FunctionCall) {
-            this.fnCall(<FunctionCall>stmt);
+        if (stmt instanceof AST.FunctionCall) {
+            this.fnCall(<AST.FunctionCall>stmt);
+
         // Return
-        } else if (stmt instanceof ReturnStatement) {
+        } else if (stmt instanceof AST.ReturnStatement) {
             this.expr(stmt.expr);
             this.instr('return');
             this.returnType = true;
+
         // Set variable
-        } else if (stmt instanceof SetLocalVar) {
+        } else if (stmt instanceof AST.SetLocalVar) {
             this.expr(stmt.expr);
             this.instr('set_local', this.getVar(stmt.ident));
+
         // Define variable
-        } else if (stmt instanceof DeclareLocalVar) {
+        } else if (stmt instanceof AST.DeclareVar) {
             let arr = false;
-            if (stmt.type instanceof ArrayType) {
+            if (stmt.type instanceof Types.Array) {
                 arr = true;
-                const sz = (<ArrayType> stmt.type).size;
+                const sz = stmt.type.size;
                 const idx = this.compiler.addGlobalArray(sz);
                 this.addLocal(stmt.ident, WasmType.i32);
                 this.instr('i32.const', idx);
@@ -104,13 +107,26 @@ class WasmFunction {
 
             if (stmt.expr) {
                 if (arr) { throw new Error('Inline initialization of arrays not supported yet'); }
-                // TODO this is copypasted from directly above
                 this.expr(stmt.expr);
                 this.instr('set_local', this.getVar(stmt.ident));
             }
-        } else if (stmt instanceof IfStatement) {
+
+        // Set array
+        } else if (stmt instanceof AST.SetArray) {
+            this.expr(stmt.ident);
+            this.expr(stmt.offset);
+            this.instr('i32.add');
+
+            this.expr(stmt.val);
+            this.instr('i32.store8');
+
+        /** Loops/Conditionals **/
+        // If
+        } else if (stmt instanceof AST.IfStatement) {
             this.expr(stmt.cond);
             this.instr('if');
+            this.ifDepth++;
+
             stmt.body.forEach(innerStmt => {
                 this.statement(innerStmt);
             });
@@ -121,47 +137,73 @@ class WasmFunction {
                 });
             }
             this.instr('end');
-        } else if (stmt instanceof WhileStatement) {
-            let loopLabel = `$${this.loopCounter}`;
-            this.loopCounter++;
+            this.ifDepth--;
 
+        // While
+        } else if (stmt instanceof AST.WhileStatement) {
             this.expr(stmt.cond);
             this.instr('if');
-            this.instr('loop', loopLabel);
-            this.loopCounter++;
+            this.instr('loop');
             stmt.body.forEach(innerStmt => {
                 this.statement(innerStmt);
             });
 
             this.expr(stmt.cond);
-            this.instr('br_if', loopLabel);
+            this.instr('br_if', 0);
             this.instr('end');
             this.instr('end');
+
+        // Break
+        } else if (stmt instanceof AST.BreakStatement) {
+            this.instr('br', this.ifDepth + 1);
+
+        // Continue
+        } else if (stmt instanceof AST.ContinueStatement) {
+            this.instr('br', 0);
         }
 
     }
 
-    expr(expr: ASTNode) {
-        if (expr instanceof FunctionCall) {
+    expr(expr: AST.Expr) {
+        if (expr instanceof AST.FunctionCall) {
             this.fnCall(expr);
-        } else if (expr instanceof Variable) {
+        } else if (expr instanceof AST.Variable) {
             this.pushVar(expr.ident);
-       } else if (expr instanceof ConstExpr) {
+       } else if (expr instanceof AST.ConstExpr) {
             this.pushConst(expr);
-       } else if (expr instanceof StringConstant) {
+       } else if (expr instanceof AST.StringConstant) {
            this.stringConstant(expr);
+       } else if (expr instanceof AST.BinaryOp) {
+           this.binaryOp(expr);
+       } else if (expr instanceof AST.ArrayOffset) {
+           this.arrayOffset(expr);
        } else {
            throw new Error(`Unexpected expr ${expr}`);
        }
     }
 
-    stringConstant(expr: StringConstant) {
+    binaryOp(expr: AST.BinaryOp) {
+        this.expr(expr.left);
+        this.expr(expr.right);
+        this.arithmetic(expr.op, Types.Int)
+    }
+
+    stringConstant(expr: AST.StringConstant) {
         const str = expr.val;
-        const idx = this.compiler.addGlobalString(str); // todo hack alert (passing second arg as string)
+        const idx = this.compiler.addGlobalString(str);
         this.instr('i32.const', idx);
     }
 
-    /// Create a new local var
+    arrayOffset(expr: AST.ArrayOffset) {
+        this.expr(expr.ident);
+        this.expr(expr.offset);
+        this.instr('i32.add');
+        this.instr('i32.load8_s');
+    }
+
+    /* Create a new local var
+     * TODO properly support vars of the same name in different blocks
+     */
     addLocal(ident: string, type?: WasmType) {
         const locType = type || WasmType.i32;
         this.locals.push(locType)
@@ -176,57 +218,34 @@ class WasmFunction {
             '-': 'sub',
             '*': 'mul',
             '/': 'div',
-            '=': 'eq',
+            '==': 'eq',
             '!=': 'ne',
             '<': 'lt_s',
             '>': 'gt_s',
             '<=': 'le_s',
-            '>=': 'ge_s'
+            '>=': 'ge_s',
+            '&&': 'and',
+            '&': 'and',
+            '||': 'or',
+            '|': 'or',
+            '^': 'xor'
         };
         const instr = `${typeToWasmType(type)}.${instrMap[ident]}`;
         this.instr(instr);
     }
 
-    fnCall(fnCall: FunctionCall) {
+    fnCall(fnCall: AST.FunctionCall) {
         const args = fnCall.args;
-
-        // Special case for setAt and getAt... might be a better way to handle this?
-        if (fnCall.ident === 'setAt') {
-            const [arrIdent, offset, val] = args;
-            this.expr(arrIdent);
-            this.expr(offset);
-            this.instr('i32.add');
-
-            this.expr(val);
-            this.instr('i32.store8');
-            return;
-        } else if (fnCall.ident === 'getAt') {
-            const [arrIdent, offset] = args;
-            this.expr(arrIdent);
-            this.expr(offset);
-            this.instr('i32.add');
-            this.instr('i32.load8_s');
-            return;
-        }
-
         const types: Type[] = [];
         args.forEach(arg => {
             this.expr(arg);
         });
 
-        if (['+', '-', '/', '*', '>', '<', '=', '!=', '>=', '<='].indexOf(fnCall.ident) > -1) {
-            if (args.length !== 2) {
-                throw new Error(`${fnCall.ident} operation accepts exactly two args`);
-            }
-            // TODO type check args
-            this.arithmetic(fnCall.ident, Types.Int);
-        } else {
-            this.instr('call', `$${fnCall.ident}`);
-        }
+        this.instr('call', `$${fnCall.ident}`);
         this.stack.push('fnCall');
     }
 
-    /// Return the index of the given var
+    /** Return the index of the given var */
     getVar(ident: string): number {
         const idx = this.identMap[ident];
         if (idx === undefined) { throw new Error(`Couldn't resolve variable ${ident}`); };
@@ -238,7 +257,7 @@ class WasmFunction {
         this.stack.push(ident);
     }
 
-    pushConst(e: ConstExpr) {
+    pushConst(e: AST.ConstExpr) {
         const instr = `${typeToWasmType(e.type)}.const`;
         if (!instr) { throw new Error(`Unexpected internal type ${e.type}`)};
 
@@ -248,8 +267,11 @@ class WasmFunction {
 
     serialize(): string { // TODO
         let ret = `(func $${this.name} (export "${this.name}") ` 
-                + this.params.map(p => `(param ${p})`).join(' ')
-                + `(result ${this.type})\n`;
+                + this.params.map(p => `(param ${p})`).join(' ');
+
+        if (this.type) {
+            ret += `(result ${this.type})\n`;
+        }
         if (this.locals.length) {
             ret += this.locals.map(l => `(local ${l})`).join(' ') + '\n';
         }
@@ -264,13 +286,17 @@ class WasmCompiler {
     globals: WasmGlobal[]
     functions: WasmFunction[]
 
+    // Where in memory to put the next global
     private globalIdx: number = 1
 
-    constructor(private astList: ASTNode[]) {
+    constructor(private astList: (AST.DeclareVar | AST.FunctionDefinition)[]) {
         this.globals = [];
         this.functions = [];
     }
 
+    /* Will be hardcoded in the wat file as a (data ...) expression,
+     *  and our index will be bumped to the length of the string + 1
+     */
     addGlobalString(val: any): number {
         const ret = this.globalIdx;
         const str = <string> val;
@@ -289,8 +315,8 @@ class WasmCompiler {
 
     compile() {
         this.astList.forEach(ast => {
-            if (ast instanceof FunctionDefinition) {
-                const fn = new WasmFunction(this, <FunctionDefinition>ast);
+            if (ast instanceof AST.FunctionDefinition) {
+                const fn = new WasmFunction(this, <AST.FunctionDefinition>ast);
                 this.functions.push(fn);
             } else {
                 throw new Error('Not yet supported');
@@ -305,13 +331,22 @@ class WasmCompiler {
 }
 
 function typeToWasmType(t: Type): WasmType {
-    if (t === Types.Float) {
+    if (t.equals(Types.Void)) {
+        return null;
+    } else if (t.equals(Types.Float)) {
         return WasmType.f32;
-    } else if (t === Types.Int || t instanceof Types.Pointer || t instanceof Types.Array) {
+    } else if (t.equals(Types.Int) || t instanceof Types.Pointer || t instanceof Types.Array) {
         return WasmType.i32;
     } else {
+        console.log(t, Types.Int);
         throw new Error(`Can't convert ${t.name} to WasmType`);
     }
 }
 
-export { WasmCompiler };
+function compile(ast) {
+    const compiler = new WasmCompiler(ast);
+    compiler.compile();
+    return compiler.serialize();
+}
+
+export { compile };

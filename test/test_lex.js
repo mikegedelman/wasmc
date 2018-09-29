@@ -1,25 +1,13 @@
 const expect = require('chai').expect;
-const lexModule = require('../lex.js');
 
-const Token = lexModule.Token;
-const RESERVED_WORDS = lexModule.RESERVED_WORDS;
-const IDENT = lexModule.IDENT;
-const lex = lexModule.lex; 
-const toList = lexModule.toList;
-
-const reservedAndParens = RESERVED_WORDS.concat(['(', ')']);
+const { Token, lex } = require('../dist/lex.js')
 
 describe('lex', () => {
 	it('lexes', () => {
-        const expected = ['(', 'test', ')', '(', 'func?', 'arg', ')'].map(x => {
-            if (reservedAndParens.indexOf(x) === -1) {
-                return new Token(x, 1, IDENT);
-            } else {
-                return new Token(x, 1);
-            }
-        });
+        const expected = ['char', '*', 'func', '(', ')', '{', 'int', 'x',
+                          '[', '25', ']', ';', 'return', '5', ';', '}'].map(ch => new Token(ch, 1));
 
-        const actual = lex('(test) (func? arg)\0(not parsed)');
+        const actual = lex(' char* func() { int x[25]; return 5; } ');
         expect(actual).to.eql(expected);
     });
 });

@@ -1,257 +1,284 @@
-/**
-program := (<global-def> | <function-def>)*
+import * as AST from './ast';
+import { BASE_TYPES, Type, Types } from './types';
 
-global-def := define <type> <ident> <ident>
+const VALID_IDENT_REGEX = /^([a-zA-Z_]+[a-zA-Z0-9_]*|[0-9]*)$/;
+const FLOAT_REGEX = /^[0-9]+\.[0-9]+$/;
+const INT_REGEX = /^[0-9]+$/;
+const BINARY_OPS = ['+', '-', '*', '/', '=', '<', '>', '<=', '>=', '==', '!=',
+                    '&', '&&', '|', '||', '^'];
 
-function-def := function <type> <ident> <param-list> <statement>*
+let toks, cur, stash, shouldStash;
 
-param-list := (<type> <ident>)*
+function next() {
+    cur = (toks.shift() || {}).val;
+}
 
-statement := var <declare-local-var>
-           | set <set-local-var>
-           | if <cond-expr> <statement>* (else <statment>*)?
-           | while <cond-expr> <statement>*
-           | return <expr>
-           | <function-call>
+function peek(idx: number) {
+    return (toks[idx] || {}).val;
+}
 
-declare-local-var := <type> <ident> <expr>?
+function error(msg) { throw new Error(msg); }
 
-set-local-var := <ident> <expr>
-
-function-call := <ident> <expr>*
-
-expr := <ident> | <function-call> | <string-const>
-
-cond-expr :=  = <expr> <expr>
-           |  > <expr> <expr>
-           |  < <expr> <expr>
-           | >= <expr> <expr>
-           | <= <expr> <expr>
-
-type := int
-      | float
-      | string
-      | void
-
-Examples:
-
-(define float y 0.5)
-
-(function int main (arc argv)
-    (var int x 5)
-    (set x 7)
-    (printf x)
-    (if (= x 5)
-      (printf 'yes')
-      (++ x)
-     else
-       (printf 'no'))
-    (puts 'Hello world')
-    (return 0))
-
-*/
-import { Token, IDENT, RESERVED_WORDS } from './lex';
-
-
-class Parser {
-    prog: Token[]
-    cur: any
-
-    constructor(prog: Token[]) {
-        this.prog = prog;
+function expect(s: string | string[] | RegExp): any {
+    const val = accept(s);
+    if (val) {
+        return val;
     }
 
-    next() {
-        this.cur = this.prog.shift();
+    error(`Expected ${s}, found ${JSON.stringify(cur)}`);
+}
+
+function accept(s: string | string[] | RegExp): any {
+    if (!cur) {
+        error(`No more tokens, expecting ${s}`);
     }
 
-    error(msg) { throw new Error(msg); }
-
-    expect(s): any {
-        const val = this.accept(s);
-        if (val) {
-            return val;
-        }
-
-        const expected = s === '__IDENT__' ? 'identifier' : s;
-        this.error(`Expected ${expected}, found ${JSON.stringify(this.cur)}`);
+    let test = false;
+    if (s instanceof RegExp) {
+        test = s.test(cur);
+    } else if (s instanceof Array) {
+        test = s.includes(cur);
+    } else {
+        test = cur === s;
     }
 
-    accept(s): any {
-        const cur = this.cur;
-        if (!cur) {
-            this.error(`No more tokens, expecting ${s}`);
-        }
-
-        if (cur.type === s) {
-            this.next();
-            return cur.val;
-        }
-
-        return false;
-    }
-
-    functionCall() {
-        const ret: any = { name: 'FunctionCall' };
-        ret.ident = this.expect(IDENT);
-        ret.args = [];
-
-        while (!this.accept(')')) {
-            ret.args.push(this.expr());
-        }
-
+    if (test) {
+        const ret = cur;
+        next();
         return ret;
     }
 
-    expr() {
-        if (this.accept('(')) {
-            return this.functionCall();
-        } else if (this.accept('"')) {
-            const str = this.expect('__string_constant__');
-            const ret = { name: 'StringConstant', val: str };
-            this.expect('"');
-            return ret;
+    return false;
+}
+
+function expectIdent() { return expect(VALID_IDENT_REGEX); }
+function acceptIdent() { return accept(VALID_IDENT_REGEX); }
+
+function functionCall(ident): AST.FunctionCall {
+    const args = [];
+
+    if (cur !== ')') {
+        do {
+            args.push(expr());
+        } while (accept(','));
+    }
+    expect(')');
+
+    return new AST.FunctionCall({ ident, args });
+}
+
+function getIdent(ident: string): AST.Expr {
+    if (INT_REGEX.test(ident)) {
+        return new AST.ConstExpr(parseInt(ident), Types.Int);
+    } else if (FLOAT_REGEX.test(ident)) {
+        return new AST.ConstExpr(parseInt(ident), Types.Float);
+    } else if (VALID_IDENT_REGEX.test(ident)) {
+        return new AST.Variable(ident);
+    } else {
+        error(`Invalid identifier: ${ident}`);
+    }
+}
+
+function binaryOp(left: AST.Expr): AST.BinaryOp {
+    const op = expect(BINARY_OPS);
+    const right = expr();
+    return new AST.BinaryOp(left, right, op);
+}
+
+function declareVar() {
+    let varType = type();
+    const ident = expectIdent();
+
+    // TODO support some kind of expressions here
+    while (accept('[')) {
+        const arrSzIdent = getIdent(expectIdent());
+        let sz;
+        if (arrSzIdent instanceof AST.ConstExpr) {
+            if (!arrSzIdent.type.equals(Types.Int)) {
+                error(`Array size expression must be an integer (for array: ${ident}`);
+            }
+            sz = arrSzIdent.val;
+        } else {console.log(arrSzIdent);
+            error(`Only literal integers currently supported for array sizes (for array ${ident}`);
+
         }
 
-        return this.expect(IDENT);
+        varType = new Types.Array(varType, sz);
+        expect(']');
     }
 
-    type() {
-        const types = ['int', 'float', 'void', 'char'];
-        let containsType = false;
+    let varExpr;
+    if (accept('=')) {
+        varExpr = expr();
+    }
+    const ret = new AST.DeclareVar({ type: varType, ident, expr: varExpr });
+    expect(';');
+    return ret;
+}
 
-        types.forEach(t => {
-            if (this.cur.val.indexOf(t) > -1) {
-                containsType = true;
-            }
-        });
-
-        if (!containsType) {
-            this.error(`Expected a type, found ${JSON.stringify(this.cur)}`);
-        }
-
-        const ret = this.cur.val;
-        this.next();
-        return ret;
+// TODO fix operator precedence
+function expr(): AST.Expr {
+    if (accept('"')) {
+        const val = cur;
+        next();
+        expect('"');
+        return new AST.StringConstant(val);
     }
 
-    globalDefinition() {
-        const ret: any = { name: 'GlobalDefinition' };
-        ret.type = this.type();
-        ret.ident = this.expect(IDENT);
-        ret.expr = this.expr();
-        this.expect(')');
-        return ret;
-    }
-
-    statement() {
-        const ret: any = {};
-
-        if (this.accept('var')) {
-            ret.name = 'DeclareLocalVar';
-            ret.type = this.type();
-            ret.ident = this.expect(IDENT);
-
-            if (this.cur.val !== ')') {
-                ret.expr = this.expr();
-            }
-            this.expect(')');
-            return ret;
-        } else if (this.accept('set')) {
-            ret.name = 'SetLocalVar';
-            ret.ident = this.expect(IDENT);
-            ret.expr = this.expr();
-            this.expect(')');
-            return ret;
-        } else if (this.accept('return')) {
-            ret.name = 'ReturnStatement';
-            ret.expr = this.expr();
-            this.expect(')');
-        } else if (this.accept('if')) {
-            ret.name = 'IfStatement';
-
-            ret.cond = this.expr();
-            ret.body = [];
-            ret.elseBody = [];
-            let curBody = ret.body;
-
-            while (this.cur.val !== ')') {
-                if (this.accept('else')) {
-                    curBody = ret.elseBody;
-                }
-                this.expect('(');
-                curBody.push(this.statement());
-            }
-            this.expect(')');
-        } else if (this.accept('while')) {
-            ret.name = 'WhileStatement';
-            ret.cond = this.expr();
-            ret.body = [];
-
-            while (this.accept('(')) {
-                ret.body.push(this.statement());
-            }
-            this.expect(')');
+    if (accept('(')) {
+        const ret = expr();
+        expect(')');
+        if (BINARY_OPS.includes(cur)) {
+            return binaryOp(ret);
         } else {
-            return this.functionCall();
+            return ret;
         }
+    } else {
+        const ident = expectIdent();
 
-        return ret;
+        if (accept('(')) {
+            return functionCall(ident);
+        } else if (accept('[')) {
+            const offset = expr();
+            expect(']');
+            return new AST.ArrayOffset(getIdent(ident), offset);
+        } else if (BINARY_OPS.includes(cur)) {
+            return binaryOp(getIdent(ident));
+        } else {
+            return getIdent(ident);
+        }
+    }
+}
+
+function ifStatement(): AST.IfStatement {
+    expect('(');
+    const condExpr = expr();
+    expect(')');
+    expect('{');
+    const body = [];
+    const elseBody = [];
+
+    while (!accept('}')) {
+        body.push(statement());
     }
 
-    functionDefinition() {
-        const ret: any = { name: 'FunctionDefinition' };
-        ret.type = this.type();
-        ret.ident = this.expect(IDENT);
-        ret.params = [];
-        ret.body = [];
-
-        this.expect('(');
-
-        while (this.cur.val !== ')') {
-            const param: any = {};
-            param.type = this.type();
-            param.ident = this.expect(IDENT);
-            ret.params.push(param);
-        }
-        this.expect(')');
-
-        while (this.cur.val !== ')') {
-            this.expect('(');
-            const stmt = this.statement();
-            ret.body.push(stmt);
-        }
-        this.expect(')');
-
-        return ret;
-    }
-
-    /// Top-level statements can only be global variable defs or functions.
-    parse() {
-        const ret = [];
-        this.next();
-
-        while (this.prog.length && this.accept('(')) {
-            if (this.accept('define')) {
-                ret.push(this.globalDefinition());
-            } else if (this.accept('function')) {
-                ret.push(this.functionDefinition());
-            } else {
-                this.error(`Expected 'define' or 'function', got ${JSON.stringify(this.cur)}`);
+    while (accept('else')) {
+        if (accept('if')) {
+            elseBody.push(ifStatement());
+        } else {
+            expect('{');
+            while (!accept('}')) {
+                elseBody.push(statement());
             }
         }
+    }
+    return new AST.IfStatement({ cond: condExpr, body, elseBody });
+}
 
-        if (this.prog.length) {
-            console.warn('Tokens were left over after parsing');
+function statement(): AST.Statement {
+    // TODO for loop, do-while
+    if (accept('return')) {
+        const ret = new AST.ReturnStatement(expr());
+        expect(';');
+        return ret;
+    } else if (accept('if')) {
+        return ifStatement();
+    } else if (accept('while')) {
+        expect('(');
+        const condExpr = expr();
+        expect(')');
+        expect('{');
+        const body = [];
+
+        while (!accept('}')) {
+            body.push(statement());
         }
-
+        return new AST.WhileStatement({ cond: condExpr, body });
+    } else if (accept('continue')) {
+        expect(';');
+        return new AST.ContinueStatement();
+    } else if (accept('break')) {
+        expect(';');
+        return new AST.BreakStatement();
+    } else if (BASE_TYPES.includes(cur)) {
+        return declareVar();
+    } else if (peek(0) === '=') {
+        const ident = expectIdent();
+        expect('=');
+        let varExpr = expr();
+        const ret = new AST.SetLocalVar({ ident, expr: varExpr });
+        expect(';');
+        return ret;
+    } else if (peek(0) === '[') {
+        // Not allowing unused array expressions to simplify this
+        const ident = getIdent(expectIdent());
+        expect('[');
+        const offset = expr();
+        expect(']');
+        expect('=');
+        const val = expr();
+        expect(';');
+        return new AST.SetArray(ident, offset, val);
+    } else {
+        const ret = expr();
+        expect(';');
         return ret;
     }
 }
 
-function parse(toks: Token[]): any {
-    const parser = new Parser(toks);
-    return parser.parse();
+function type(): Type {
+    const typeName = expect(BASE_TYPES);
+    let numPointers = 0;
+    while (accept('*')) {
+        numPointers++;
+    }
+
+    return Type.buildType(typeName, numPointers);
+}
+
+function functionDefinition(fnType, ident): AST.FunctionDefinition {
+    const params = [];
+    const body = [];
+    if (cur !== ')') {
+        do {
+            const paramType = type();
+            const paramName = expectIdent();
+            params.push(new AST.FunctionParam({ type: paramType, ident: paramName }));
+        } while (accept(','));
+    }
+    expect(')');
+    expect('{');
+    while (cur !== '}') {
+        body.push(statement());
+    }
+    expect('}');
+
+    return new AST.FunctionDefinition({ ident, type: fnType, params, body });
+}
+
+function parse(_toks) {
+    toks = _toks;
+    next();
+
+    const ret: (AST.FunctionDefinition)[] = [];
+
+    while (toks.length) {
+        const newType = type();
+        const ident = expectIdent();
+
+        // Top-level statements can only be global variable defs or functions.
+        if (accept('(')) {
+            ret.push(functionDefinition(newType, ident));
+        } else {
+            error('Global defs not yet supported');
+        }
+    }
+
+    if (toks.length) {
+        console.warn('Tokens were left over after parsing');
+    }
+
+    return ret;
 }
 
 export { parse };

@@ -1,26 +1,14 @@
 import { takeWhile } from './utility';
 
-const RESERVED_WORDS = ['define', 'function', 'var', 'set', 'if', 'else', 'int', 'float',
-                        'while', 'string', 'void', 'return'];
-const IDENT = '__IDENT__';
+// The following two lists are strings that should always get their own token.
+const TOKENIZE_CHARS = ['(', ')', '[', ']', '{', '}', '<', '>', '=',
+                        '*', '+', '-', '/', ';', ',', '&', '|', '^',
+                        '!'];
+const TOKENIZE_DOUBLE_CHARS = ['==', '!=', '<=', '>=', '||', '&&', '>>', '<<'];
 
 class Token {
-    val: string
-    line: number
-    type: string
-
-    constructor(val: string, line: number, type?: string) {
-        this.val = val;
-        this.line = line;
-
-        if (type) {
-            this.type = type;
-        } else {
-            this.type = val;
-        }
-    }
+    constructor(public val: string, public line: number, public isStringLiteral?: boolean) {}
 }
-
 
 function isWhitespace(ch: string): boolean {
     return ch === ' ' || ch === '\t';
@@ -30,7 +18,7 @@ function isWord(ch: string): boolean {
     return ch >= 'a' && ch <= 'z' || 
         ch >= 'A' && ch <= 'Z' ||
         ch >= '0' && ch <= '9' ||
-        /[~!@#$%^&*-_+=?\"']/.test(ch);
+        /[-_]/.test(ch);
 }
 
 function charsToString(arr: string[]): string {
@@ -45,43 +33,66 @@ function lex(raw: string): Token[] {
 
     while (idx < chars.length) {
         const ch = chars[idx];
+        const next = chars[idx + 1];
 
+        // Whitespace
         if (isWhitespace(ch)) {
             const matching = charsToString(takeWhile(chars.slice(idx), isWhitespace));
             idx += matching.length;
-        } else if (ch === '(' || ch === ')') {
-            ret.push(new Token(ch, line));
-            idx++;
+
+        // Inline comment
+        } else if (ch === '/' && next === '*') {
+            const matching = charsToString(takeWhile(chars.slice(idx + 2), (cur, arr, idx) => {
+                return cur !== '*' && arr[idx + 1] !== '/'
+            }));
+            idx += matching.length + 4;
+            line += (matching.match(/\n/) || []).length;
+
+        // One-line comment
+        } else if (ch === '/' && next === '/') {
+            const matching = charsToString(takeWhile(chars.slice(idx + 2), c => c !== '\n' && c !== '\r'));
+            idx += matching.length + 3;
+            line += (matching.match(/\n/) || []).length;
+
+        // Tokenize individual chars
+        } else if (TOKENIZE_CHARS.includes(ch)) {
+            const doubleChar = ch + next;
+            if (TOKENIZE_DOUBLE_CHARS.includes(doubleChar)) {
+                ret.push(new Token(doubleChar, line));
+                idx += 2;
+            } else {
+                ret.push(new Token(ch, line));
+                idx++;
+            }
+
+        // Tokenize a string constant
         } else if (ch == '"') {
             ret.push(new Token('"', line));
             const cs = takeWhile(chars.slice(idx + 1), c => c !== '"');
             const matching = charsToString(cs);
             if (matching.indexOf('\n') > -1) { throw new Error("Unexpected line break in string constant"); }
 
-            ret.push(new Token(matching, line, '__string_constant__'));
+            ret.push(new Token(matching, line, true));
             ret.push(new Token('"', line));
             idx += matching.length + 2;
+
+        // Word
         } else if (isWord(ch)) {
             const matching = charsToString(takeWhile(chars.slice(idx), isWord));
-
-            if (RESERVED_WORDS.indexOf(matching) === -1) {
-                ret.push(new Token(matching, line, IDENT));
-            } else {
-                ret.push(new Token(matching, line));
-            }
+            ret.push(new Token(matching, line));
             idx += matching.length;
 
-        } else if (ch === '\0') { // TODO I don't think null char is EOF
-            return ret;
+        // Count line breaks
         } else if (ch === '\n' || ch === '\r') {
             line++;
             idx++;
+
         } else {
-            throw new Error('Encountered an illegal character');
+            throw new Error(`Encountered an illegal character: ${ch}`);
         }
     }
 
     return ret;
 }
 
-export { lex, Token, IDENT, RESERVED_WORDS };
+export { lex, Token };

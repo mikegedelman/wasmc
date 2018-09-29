@@ -1,146 +1,98 @@
+import { Type, Types } from './types';
+
 interface ASTNode {}
 
-const FLOAT_REGEX = /^[0-9]+\.[0-9]+$/;
-const INT_REGEX = /^[0-9]+$/;
-const VALID_IDENT_REGEX = /^[a-zA-Z_]+[a-zA-Z0-9_]*$/;
-
-class Type {
-    constructor(public name: string) {}
-
-    equals(other: Type): boolean {
-        return this.name === other.name;
-    }
-}
-
-class Pointer extends Type {
-    name: string
-
-    constructor (public wrappedType: Type) {
-        super('this gets overwritten');
-        this.name = `*${wrappedType.name}`;
-    }
-}
-
-class ArrayType extends Type {
-    name: string
-    constructor (public wrappedType: Type, public size: number) {
-        super('this gets overwritten');
-        this.name = `${wrappedType.name}[${size}]`;
-    }
-}
-
-const Types = {
-    Float: new Type('float'),
-    Int: new Type('int'),
-    Void: new Type('void'),
-    Char: new Type('char'),
-    Pointer: Pointer,
-    Array: ArrayType
-};
-
-const baseTypes = {
-    'int': Types.Int,
-    'float': Types.Float,
-    'void': Types.Void,
-    'char': Types.Char
-}
-
+type Expr = ConstExpr | Variable | StringConstant | FunctionCall | BinaryOp | ArrayOffset;
+type Statement = ReturnStatement | SetLocalVar | DeclareVar | IfStatement
+               | WhileStatement | ContinueStatement | BreakStatement 
+               | SetArray | Expr;
 
 class ConstExpr implements ASTNode {
-    val: any
-    type: Type
-
-    constructor(val: string) {
-        if (FLOAT_REGEX.test(val)) {
-            this.val = parseFloat(val);
-            this.type = Types.Float;
-        } else if (INT_REGEX.test(val)) {
-            this.val = parseInt(val);
-            this.type = Types.Int;
-        } else {
-            throw new Error(`Invalid identifier: ${val}`);
-        }
-    }
+    constructor(public val: number, public type: Type) {}
 }
 
 class StringConstant implements ASTNode {
-    val: string
-
-    constructor({name, val}: {name: string, val: string}) {
-        this.val = val;
-    }
+    constructor(public val: string) {}
 }
 
 class Variable implements ASTNode {
     constructor(public ident: string) {}
-
-    static isValid(ident: string) {
-        return VALID_IDENT_REGEX.test(ident);
-    }
 }
 
-class ReturnStatement implements ASTNode {
-    expr: ASTNode
+class ReturnStatement implements ASTNode
+ {
+    constructor(public expr: Expr) {}
+}
 
-    constructor({name, expr}: {name: string, expr: any}) {
-        this.expr = makeExpr(expr);
-    }
+class BinaryOp implements ASTNode {
+    constructor(public left: Expr, public right: Expr, public op: string) {}
+}
+
+class ArrayOffset implements ASTNode {
+    constructor(public ident: Expr, public offset: Expr) {}
 }
 
 class SetLocalVar implements ASTNode {
     ident: string
-    expr: ASTNode
+    expr: Expr
 
-    constructor({ident, expr}: {ident: string, expr: any}) {
+    constructor({ident, expr}: {ident: string, expr: Expr}) {
         this.ident = ident;
-        this.expr = makeExpr(expr);
+        this.expr = expr;
     }
 }
 
-class DeclareLocalVar implements ASTNode {
+class DeclareVar implements ASTNode {
     ident: string
     type: Type
-    expr?: ASTNode
+    expr?: Expr
 
-    constructor(obj: {ident: string, type: string, expr?: any}) {
+    constructor(obj: {ident: string, type: Type, expr?: Expr}) {
         this.ident = obj.ident;
-        this.type = makeType(obj.type);
+        this.type =  obj.type;
 
         if (obj.expr) {
-            this.expr = makeExpr(obj.expr);
+            this.expr = obj.expr;
         }
     }
 }
 
-class IfStatement implements ASTNode {
-    cond: ASTNode
-    body: ASTNode[]
-    elseBody: ASTNode[]
+class SetArray implements ASTNode {
+    constructor(public ident: Expr, public offset: Expr, public val: Expr) {}
+}
 
-    constructor(obj: {cond: any, body: any, elseBody: any}) {
-        this.cond = makeExpr(obj.cond);
-        this.body = obj.body.map(stmt => makeStatement(stmt));
-        this.elseBody = obj.elseBody.map(stmt => makeStatement(stmt));
+class IfStatement implements ASTNode {
+    cond: Expr
+    body: Statement[]
+    elseBody: Statement[]
+
+    constructor(obj: {cond: Expr, body: Statement[], elseBody: Statement[]}) {
+        this.cond = obj.cond;
+        this.body = obj.body;
+        this.elseBody = obj.elseBody;
     }
 }
 
 class WhileStatement implements ASTNode {
-    cond: ASTNode
-    body: ASTNode[]
+    cond: Expr
+    body: Statement[]
 
-    constructor(obj: {cond: any, body: any}) {
-        this.cond = makeExpr(obj.cond);
-        this.body = obj.body.map(stmt => makeStatement(stmt));
+    constructor(obj: {cond: Expr, body: Statement[] }) {
+        this.cond = obj.cond;
+        this.body = obj.body;
     }
 }
 
+class ContinueStatement implements ASTNode {}
+class BreakStatement implements ASTNode {}
+
 class FunctionCall implements ASTNode {
     ident: string
-    args: ASTNode[]
+    args: Expr[]
 
-    constructor({ident, args}: {ident: string, args: any[]}) {
+    constructor({ident, args}: {ident: string, args: Expr[]}) {
         this.ident = ident;
-        this.args = args.map(makeExpr);
+        this.args = args;
     }
 }
 
@@ -149,124 +101,39 @@ class GlobalDefinition implements ASTNode {
     type: Type
     expr: ASTNode
 
-    constructor({ident, type, expr}: {ident: string, type: string, expr: any}) {
+    constructor({ident, type, expr}: {ident: string, type: Type, expr: Expr}) {
         this.ident = ident;
-        this.type = makeType(type)
-        this.expr = makeExpr(expr);
+        this.type = type;
+        this.expr = expr;
+    }
+}
+
+class FunctionParam implements ASTNode {
+    ident: string
+    type: Type
+    constructor({ident, type}: {ident: string, type: Type}) {
+        this.ident = ident;
+        this.type = type;
     }
 }
 
 class FunctionDefinition implements ASTNode {
     ident: string
     type: Type
-    params: { ident: string, type: Type }[]
-    body: ASTNode[]
+    params: FunctionParam[]
+    body: Statement[]
 
-    constructor({ ident, type, params, body}: {ident: string, type: string, params: any[],
-                                               body: any[]}) {
+    constructor({ident, type, params, body}: {ident: string, type: Type, params: FunctionParam[],
+                                              body: Statement[]}) {
         this.ident = ident;
-        this.type = makeType(type);
+        this.type = type;
         this.params = params;
-        this.body = body.map(makeStatement);
+        this.body = body;
     }
 }
 
-function makeExpr(expr: any): FunctionCall | ConstExpr | Variable | StringConstant {
-    if (expr && expr.name === 'FunctionCall') {
-        return new FunctionCall(expr);
-    } else if (expr.name === 'StringConstant') {
-        return new StringConstant(expr);
-    } else if (Variable.isValid(expr)) {
-        return new Variable(expr);
-    } else {
-        return new ConstExpr(expr);
-    }
-}
-
-function makeStatement(stmt: any): FunctionCall | ReturnStatement | SetLocalVar | DeclareLocalVar | IfStatement | WhileStatement {
-    if (!stmt) { throw new Error('Fatal: found undefined statement'); }
-
-    if (stmt.name === 'FunctionCall') {
-        return new FunctionCall(stmt);
-    } else if (stmt.name === 'ReturnStatement') {
-        return new ReturnStatement(stmt);
-    } else if (stmt.name === 'SetLocalVar') {
-        return new SetLocalVar(stmt);
-    } else if (stmt.name === 'DeclareLocalVar') {
-        return new DeclareLocalVar(stmt);
-    } else if (stmt.name === 'IfStatement') {
-        return new IfStatement(stmt);
-    } else if (stmt.name === 'WhileStatement') {
-        return new WhileStatement(stmt);
-    } else {
-        throw new Error(`Unexpected function body statement: ${JSON.stringify(stmt)}`);
-    }
-}
-
-function makeType(typeName: string): Type {
-    // let workType = typeName;
-    const firstStar = typeName.indexOf('*');
-    const firstBracket = typeName.indexOf('[');
-    const firstSym = Math.min(firstStar > -1 ? firstStar : Infinity,
-                              firstBracket > -1 ? firstBracket : Infinity);
-
-    let baseTypeName = typeName;
-    if (firstSym < Infinity) {
-        baseTypeName = typeName.slice(0, firstSym);
-    }
-    let ret = baseTypes[baseTypeName];
-    if (!ret) { throw new Error(`Unrecognized type "${baseTypeName}"`)};
-    if (firstSym == -1) {
-        return ret;
-    }
-    
-    if (firstBracket > -1) {
-        let brackets = typeName.slice(firstBracket + 1);
-        while (brackets !== '') {
-            const nextBracket = brackets.indexOf(']');
-            const num = brackets.slice(0, nextBracket);
-            const sz = parseInt(num);
-            if (isNaN(sz)) {
-                throw new Error(`Couldn't parse array size "${num}"`);
-            }
-
-            ret = new Types.Array(ret, sz);
-            brackets = brackets.slice(nextBracket + 2);
-        }
-    }
-
-    if (firstStar > -1) {
-        let end = undefined;
-        if (firstBracket > -1) {
-            end = firstBracket;
-        }
-        let stars = typeName.slice(firstStar, end);
-        while (stars !== '') {
-            ret = new Types.Pointer(ret);
-            stars = stars.substr(1);
-        }
-    }
-
-    return ret;
-}
-
-let nodes;
-function buildAST(parseData: any[]) {
-    nodes = [];
-
-    parseData.forEach(topLevel => {
-        if (topLevel.name === 'GlobalDefinition') {
-            nodes.push(new GlobalDefinition(topLevel));
-        } else if (topLevel.name === 'FunctionDefinition') {
-            nodes.push(new FunctionDefinition(topLevel));
-        } else {
-            throw new Error(`Unexpected top level node: ${JSON.stringify(topLevel)}`);
-        }
-    });
-
-    return nodes;
-}
-
-export { buildAST, Type, Types, Variable, ConstExpr, FunctionCall, GlobalDefinition,
-         FunctionDefinition, ReturnStatement, ASTNode, SetLocalVar, DeclareLocalVar,
-         makeType, StringConstant, IfStatement, WhileStatement, ArrayType };
+export { Variable, ConstExpr, FunctionCall, GlobalDefinition,
+         FunctionDefinition, ReturnStatement, ASTNode, SetLocalVar, DeclareVar,
+         FunctionParam, StringConstant, IfStatement, WhileStatement, ContinueStatement,
+         BreakStatement, SetArray, ArrayOffset,
+         Statement, Expr, BinaryOp };
