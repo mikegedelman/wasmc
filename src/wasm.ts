@@ -1,5 +1,5 @@
 import * as AST from './ast';
-import { Type, Types } from './types';
+import { Type, Types, BUILTIN_FNS } from './types';
 
 enum WasmType {
     i32 = 'i32',
@@ -45,6 +45,7 @@ class Function {
     compiler: Compiler
 
     private identMap: any = {}
+    // private typeMap: any = {} // ident -> type
     private localCounter: number = 0
     private stack: any[] = []  // Represent values currently on the local stack
     private returnType: any = false  // Later this will be an actual type for type checking
@@ -60,6 +61,7 @@ class Function {
 
         fn.params.forEach((param, idx) => {
             this.identMap[param.ident] = idx;
+            // this.typeMap[param.ident] = param.type;
             this.localCounter++;
         });
 
@@ -92,11 +94,11 @@ class Function {
             arr = true;
             const sz = stmt.type.size;
             const idx = this.compiler.addGlobalArray(sz);
-            this.addLocal(stmt.ident, WasmType.i32);
+            this.addLocal(stmt.ident, stmt.type);
             this.instr('i32.const', idx);
             this.instr('set_local', this.getVar(stmt.ident));
         } else {
-            this.addLocal(stmt.ident, <WasmType> typeToWasmType(stmt.type));
+            this.addLocal(stmt.ident, stmt.type);
         }
 
         if (stmt.expr) {
@@ -144,7 +146,8 @@ class Function {
             this.instr('i32.add');
 
             this.expr(stmt.val);
-            this.instr('i32.store8');
+            // const wasmType = typeToWasmType(stmt.val.type);
+            this.instr(`i32.store8`);
 
         /** Loops/Conditionals **/
         // If
@@ -207,7 +210,6 @@ class Function {
         } else {
             this.expr(stmt, true);
         }
-
     }
 
     expr(expr: AST.Expr, topLevel?: boolean) {
@@ -278,10 +280,11 @@ class Function {
     /* Create a new local var
      * TODO properly support vars of the same name in different blocks
      */
-    addLocal(ident: string, type?: WasmType) {
-        const locType = type || WasmType.i32;
+    addLocal(ident: string, t: Type) {
+        const locType = typeToWasmType(t);
         this.locals.push(locType)
         this.identMap[ident] = this.localCounter;
+        // this.typeMap[ident] = t;
 
         this.localCounter++;
     }
@@ -310,9 +313,23 @@ class Function {
 
     fnCall(fnCall: AST.FunctionCall) {
         const args = fnCall.args;
-        const types: Type[] = [];
+        const expectedParams = this.compiler.functionParamTypes[fnCall.ident];
+        if (!expectedParams) { throw new Error(`No type info for ${fnCall.ident}`); }
+
+        if (args.length !== expectedParams.length) {
+            throw new Error(`Arity mismatch: ${fnCall.ident} expects ${expectedParams.length} args, got ${args.length}`);
+        }
+
+        const argTypes = [];
         args.forEach(arg => {
             this.expr(arg);
+            argTypes.push(arg.type);
+        });
+
+        expectedParams.forEach((param, idx) => {
+            if (!param.type.equals(args[idx].type)) {
+                throw new Error(`Fn call ${fnCall.ident}, param ${idx}, type mismatch: expected ${param.type.name}, got ${args[idx].type.name}`);
+            }
         });
 
         this.instr('call', `$${fnCall.ident}`);
@@ -363,12 +380,18 @@ class Compiler {
     globals: Global[]
     functions: Function[]
 
+    functionParamTypes: any = {}
+
     // Where in memory to put the next global
     private globalIdx: number = 1
 
     constructor(private astList: (AST.DeclareVar | AST.FunctionDefinition)[]) {
         this.globals = [];
         this.functions = [];
+
+        Object.entries(BUILTIN_FNS).forEach(([key, vals]) => {
+            this.functionParamTypes[key] = vals.map(type => new AST.FunctionParam({ ident: key, type }));
+        })
     }
 
     /* Will be hardcoded in the wat file as a (data ...) expression,
@@ -391,9 +414,15 @@ class Compiler {
     }
 
     compile() {
+        this.astList.forEach(node => {
+            if (node instanceof AST.FunctionDefinition) {
+                this.functionParamTypes[node.ident] = node.params;
+            }
+        });
+
         this.astList.forEach(ast => {
             if (ast instanceof AST.FunctionDefinition) {
-                const fn = new Function(this, <AST.FunctionDefinition>ast);
+                const fn = new Function(this, ast);
                 this.functions.push(fn);
             } else {
                 throw new Error('Not yet supported');
@@ -412,10 +441,10 @@ function typeToWasmType(t: Type): WasmType {
         return null;
     } else if (t.equals(Types.Float)) {
         return WasmType.f32;
-    } else if (t.equals(Types.Int) || t instanceof Types.Pointer || t instanceof Types.Array) {
+    } else if (t.equals(Types.Int) || t.equals(Types.Char) || t instanceof Types.Pointer
+               || t instanceof Types.Array) {
         return WasmType.i32;
     } else {
-        console.log(t, Types.Int);
         throw new Error(`Can't convert ${t.name} to WasmType`);
     }
 }

@@ -6,6 +6,7 @@ import { argv } from 'yargs';
 
 import { lex } from './lex';
 import { parse } from './parse';
+import { checkTypes } from './ast';
 import { compile } from './wasm';
 import { takeWhile } from './utility';
 import { runWasmc } from './run';
@@ -69,6 +70,7 @@ function main() {
     const prog = readFileSync(filename).toString();
     const toks = lex(prog);
     const ast = parse(toks);
+    checkTypes(ast);
     if (argv.d) { // d for debug
         console.log(JSON.stringify(ast, null, 2));
     }

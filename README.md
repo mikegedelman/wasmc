@@ -88,7 +88,7 @@ Supported binary operators: `+`, `-`, `*`, `/`, `>`, `<`, `>=`, `<=`, `==`, `!=`
 
 Assignment operators: `+=`, `-=`, `*=`, `/=`, `&=`, `|=`, `^=`
 
-Unary operators: `++`, `--`, `!`, `*`, `&`, `~`
+Unary operators: `++`, `--`, `!`, `*`, `&`; todo: `~`, type casts, `sizeof`
 
 ### Provided Functions
 
@@ -118,7 +118,7 @@ Opts:
 
 # Roadmap
 
-* Add type checking
+* Proper array sizes (they're all 8-bit currently)
 * Properly implement operator precedence
   - Currently it's just in the order given, but parens are supported
   - Because of this be really careful with conditional expressions, `&&` is currently equivalent to `&`

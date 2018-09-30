@@ -3,6 +3,9 @@ import { ALL_OPS } from './types';
 
 const TOKENIZE_STRINGS = [...ALL_OPS, '(', ')', '{', '}', '[', ']', ',', ';'];
 
+const BEGIN_WORD_REGEX = /([a-z]+|[A-Z]+|_+)/;
+const BEGIN_NUM_REGEX = /[0-9]+/;
+
 class Token {
     constructor(public val: string, public line: number, public isStringLiteral?: boolean) {}
 }
@@ -14,6 +17,12 @@ function isWhitespace(ch: string): boolean {
 function isWord(ch: string): boolean {
     return /([a-z]+|[A-Z]+|[0-9]+|_+)/.test(ch);
 }
+
+function isDigit(ch: string): boolean {
+    return /([0-9]+|\.+)/.test(ch);
+}
+
+function isIdent(ch: string): boolean { return isWord(ch) || isDigit(ch); }
 
 function charsToString(arr: string[]): string {
     return arr.reduce((a, b) => a + b);
@@ -70,8 +79,15 @@ function lex(raw: string): Token[] {
             idx += matching.length + 2;
 
         // Word
-        } else if (isWord(ch)) {
+        } else if (BEGIN_WORD_REGEX.test(ch)) {
             const matching = charsToString(takeWhile(chars.slice(idx), isWord));
+            ret.push(new Token(matching, line));
+            idx += matching.length;
+
+
+        } else if (BEGIN_NUM_REGEX.test(ch)) {
+            const matching = charsToString(takeWhile(chars.slice(idx), isDigit));
+
             ret.push(new Token(matching, line));
             idx += matching.length;
 

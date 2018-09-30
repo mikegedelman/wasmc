@@ -2,7 +2,7 @@ import * as AST from './ast';
 import { BASE_TYPES, BINARY_OPS, PREFIX_UNARY_OPS, POSTFIX_UNARY_OPS, ASSIGNMENT_OPS,
          Type, Types } from './types';
 
-const VALID_IDENT_REGEX = /^([a-zA-Z_]+[a-zA-Z0-9_]*|[0-9]*)$/;
+const VALID_IDENT_REGEX = /^([a-zA-Z_]+[a-zA-Z0-9_]*|[0-9]+(\.[0-9]+)?)$/;
 const FLOAT_REGEX = /^[0-9]+\.[0-9]+$/;
 const INT_REGEX = /^[0-9]+$/;
 
