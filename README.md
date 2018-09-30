@@ -106,13 +106,19 @@ npm i -g typescript ts-node  # Or install these locall only, if you want
 npm i
 ```
 
+### Compiler
+
 `ts-node src/compile.ts [filename] <opts>`
+
 Opts:
-    * `-o` output filename, defaults to `a.out.wasm`
-    * `-S` generate wast only (default filename `a.out.wast`)
-    * `-i` keep intermediate wast
-    * `-r` immediately run generated wasm
-    * `-d` debug
+
+* `-o` output filename, defaults to `a.out.wasm`
+* `-S` generate wast only (default filename `a.out.wast`)
+* `-i` keep intermediate wast
+* `-r` immediately run generated wasm
+* `-d` debug
+
+### WASM Runner
 
 `ts-node src/run.ts [filename]`
 
