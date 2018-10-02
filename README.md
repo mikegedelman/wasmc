@@ -48,7 +48,7 @@ arr[2] = (99 + 4);
 ```
 
 ### If/Else
-```
+```c
 /* 
  * if (<expr>) { <statement>* }
  * if (<expr>) { <statement>* } else { <statement>* }
@@ -63,7 +63,7 @@ if (x > 0) {
 ```
 
 ### Loops
-```
+```c
 /* while (<expr>) { <statement>* } */
 
 int x = 10;
@@ -82,7 +82,7 @@ while (x > 0) {
     }
 }
 
-/* do-while { <statement>* } (<expr>); *?
+/* do-while { <statement>* } (<expr>); */
 
 int x = 10;
 do {
