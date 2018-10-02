@@ -40,8 +40,8 @@ int x;
 int arr[25];
 int y = 5;
 
-# Set value of a variable
-<identifier> <array-expression>? = <expr>
+/* Set value of a variable
+ * <identifier> <array-expression>? = <expr> */
 x = 25;
 y = (9 * 46);
 arr[2] = (99 + 4);
