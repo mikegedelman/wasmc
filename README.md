@@ -3,14 +3,14 @@ A toy compiler for a subset of C to WebAssembly
 
 ## Quick Example
 
-```
-# main.wasmc
+```c
+/* main.wasmc */
 int main() {
     log("Hello world from WebAssembly!\n");
 }
 ```
 
-```
+```bash
 # command line
 $ ts-node src/compile.ts main.wasmc -o main.wasm
 $ ts-node src/run.ts main.wasm
@@ -23,17 +23,18 @@ wasmc supports most basic features of C, although a few are still being added:
 
 ### Function Definition
 
-```
-<type> <identifier> (<param>, ...) { <statement>* }
+```c
+/* <type> <identifier> (<param>, ...) { <statement>* } */
 
 char* fn_name (char* ptr, int sz) { ... }
 ```
 
 ### Variables
-```
-# Declaration
-<type> <identifier> <array-expression>? ;
-<type> <identifier> = <expr> ;
+```c
+/* Declaration
+ * <type> <identifier> <array-expression>? ;
+ * <type> <identifier> = <expr> ;
+ */
 
 int x;
 int arr[25];
@@ -48,9 +49,11 @@ arr[2] = (99 + 4);
 
 ### If/Else
 ```
-if (<expr>) { <statement>* }
-if (<expr>) { <statement>* } else { <statement>* }
-if (<expr>) { <statement>* } else <if-statement>+
+/* 
+ * if (<expr>) { <statement>* }
+ * if (<expr>) { <statement>* } else { <statement>* }
+ * if (<expr>) { <statement>* } else <if-statement>+
+ */
 
 if (x > 0) {
     x = x + 1;
@@ -61,7 +64,7 @@ if (x > 0) {
 
 ### Loops
 ```
-while (<expr>) { <statement>* }
+/* while (<expr>) { <statement>* } */
 
 int x = 10;
 while (x > 0) {
@@ -79,7 +82,7 @@ while (x > 0) {
     }
 }
 
-do-while { <statement>* } (<expr);
+/* do-while { <statement>* } (<expr>); *?
 
 int x = 10;
 do {
@@ -87,7 +90,7 @@ do {
   x--;
 } while (x > 0);
 
-for (<variable-dec>?; <expr>?; <statement>?) { <statement>* }
+/* for (<variable-dec>?; <expr>?; <statement>?) { <statement>* } */
 
 for (int x = 10; x > 0; x--) {
   logInt(x);
@@ -120,7 +123,7 @@ npm i
 
 ### Compiler
 
-`ts-node src/compile.ts [filename] <opts>`
+```ts-node src/compile.ts [filename] <opts>```
 
 Opts:
 
@@ -132,7 +135,7 @@ Opts:
 
 ### WASM Runner
 
-`ts-node src/run.ts [filename]`
+```ts-node src/run.ts [filename]```
 
 # Roadmap
 
