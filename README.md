@@ -50,7 +50,7 @@ arr[2] = (99 + 4);
 ```
 if (<expr>) { <statement>* }
 if (<expr>) { <statement>* } else { <statement>* }
-if (<expr>) { <statement>* } else if (<expr) { <statement>* } ...
+if (<expr>) { <statement>* } else <if-statement>+
 
 if (x > 0) {
     x = x + 1;
@@ -78,9 +78,21 @@ while (x > 0) {
         break;
     }
 }
-```
 
-`do-while` and `for` to be added soon.
+do-while { <statement>* } (<expr);
+
+int x = 10;
+do {
+  logInt(x);
+  x--;
+} while (x > 0);
+
+for (<variable-dec>?; <expr>?; <statement>?) { <statement>* }
+
+for (int x = 10; x > 0; x--) {
+  logInt(x);
+}
+```
 
 ### Operators
 
